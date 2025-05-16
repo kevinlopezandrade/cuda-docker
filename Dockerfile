@@ -1,11 +1,12 @@
 ARG CUDA_VERSION=12.8.1
 ARG BASE_IMAGE=nvcr.io/nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu24.04
+
 FROM ${BASE_IMAGE} AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Europe/Zurich
 
-# install some essential packages
+# Install some essential packages
 RUN apt-get -qq update && \
     apt-get -qq install -y \
     apt-utils \
@@ -82,21 +83,20 @@ RUN apt-get -qq update && \
     rm -rf /var/lib/apt/lists/*
 
 
-
 FROM builder-base AS hpcx
 # HPC-X
 # grep + sed is used as a workaround to update hardcoded pkg-config / libtools archive / CMake prefixes
-ARG HPCX_DISTRIBUTION="hpcx-v2.23-gcc-doca_ofed-ubuntu22.04-cuda12"
+ARG HPCX_DISTRIBUTION="hpcx-v2.23-gcc-doca_ofed-ubuntu24.04-cuda12"
 RUN cd /tmp && \
     DIST_NAME="${HPCX_DISTRIBUTION}-$(uname -m)" && \
     HPCX_DIR="/opt/hpcx" && \
-    wget -q -O - "https://blobstore.object.ord1.coreweave.com/drivers/${DIST_NAME}.tbz" | tar xjf - && \
+    wget -q -O - "https://storage.googleapis.com/kev-blobs/${DIST_NAME}.tbz" | tar xjf - && \
     grep -IrlF "/build-result/${DIST_NAME}" "${DIST_NAME}" | xargs -rd'\n' sed -i -e "s:/build-result/${DIST_NAME}:${HPCX_DIR}:g" && \
     mv "${DIST_NAME}" "${HPCX_DIR}" && \
     rm -r /opt/hpcx/ompi
 
-FROM base AS base-amd64
 
+FROM base AS final
 COPY --link --from=hpcx /opt/hpcx /opt/hpcx
 
 RUN ldconfig
@@ -165,11 +165,9 @@ ENV CPATH=/opt/hpcx/ompi/include:/opt/hpcx/ucc/include:/opt/hpcx/ucx/include:/op
 ENV PKG_CONFIG_PATH=/opt/hpcx/hcoll/lib/pkgconfig:/opt/hpcx/sharp/lib/pkgconfig:/opt/hpcx/ucx/lib/pkgconfig:/opt/hpcx/ompi/lib/pkgconfig
 # End of auto-generated paths
 
-FROM base-amd64
 # Disable UCX VFS to stop errors about fuse mount failure
 ENV UCX_VFS_ENABLE=no
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
 RUN sh /uv-installer.sh && rm /uv-installer.sh
