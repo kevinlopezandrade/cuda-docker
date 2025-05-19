@@ -103,6 +103,7 @@ RUN ldconfig
 
 # HPC-X Environment variables
 COPY ./printpaths.sh /tmp
+RUN chmod +x /tmp/printpaths.sh
 SHELL ["/bin/bash", "-c"]
 RUN source /opt/hpcx/hpcx-init.sh && \
     hpcx_load && \
