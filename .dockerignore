@@ -1,0 +1,7 @@
+.*
+.git*
+.git/
+*.bkp
+!Dockerfile
+!build.sh
+!run.sh
