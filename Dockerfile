@@ -120,4 +120,36 @@ HEALTHCHECK NONE
 
 # Use tini as init to handle signals/zombies correctly
 ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# ==========================================
+# STAGE 1: STANDARD (The full dev image)
+# ==========================================
+FROM base AS standard
+CMD ["zsh"]
+
+
+# ==========================================
+# STAGE 2: SECURE (Git/Tools Disabled)
+# ==========================================
+FROM standard AS secure
+
+# Switch to root temporarily to write to /usr/local/bin
+USER root
+
+# Uninstall Git and Git-LFS to free space and remove the binaries
+RUN apt-get -y purge git git-lfs \
+    && apt-get -y autoremove \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    echo '#!/bin/sh\necho "git is disabled in this container" >&2; exit 127' > /usr/local/bin/git && chmod +x /usr/local/bin/git; \
+    echo '#!/bin/sh\necho "git-lfs is disabled in this container" >&2; exit 127' > /usr/local/bin/git-lfs && chmod +x /usr/local/bin/git-lfs; \
+    echo '#!/bin/sh\necho "GitHub CLI (gh) is disabled in this container" >&2; exit 127' > /usr/local/bin/gh && chmod +x /usr/local/bin/gh
+
+RUN set -eux; \
+    mkdir -p /etc/apt/preferences.d; \
+    printf 'Package: git*\nPin: release *\nPin-Priority: -1\n' > /etc/apt/preferences.d/deny-git
+
+# Switch back to the dev user for runtime
+USER "${USERNAME}"
 CMD ["zsh"]
