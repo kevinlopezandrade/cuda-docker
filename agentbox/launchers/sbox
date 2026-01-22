@@ -150,6 +150,11 @@ main() {
     # Common setup (config, defaults, image selection)
     launcher_setup "bash"  # Default command for slurm
 
+    # Check for unsupported --keep flag
+    if [[ "$KEEP_ALIVE" -eq 1 ]]; then
+        die 1 "--keep is not supported for Slurm. Use -n/--name for reattachable containers."
+    fi
+
     # Slurm-specific validation
     slurm_validate
 

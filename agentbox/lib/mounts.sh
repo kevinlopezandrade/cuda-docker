@@ -299,6 +299,17 @@ mount_codex_config() {
     fi
 }
 
+# Mount claude config directory
+# Globals:
+#   AGENTBOX_MOUNTS
+mount_claude_config() {
+    local claude_dir="$HOME/.claude"
+    if [[ -d "$claude_dir" ]]; then
+        mount_mirror "$claude_dir" "rw"
+        log_debug "Mounted ~/.claude for claude config"
+    fi
+}
+
 # Mount /etc/passwd and /etc/group for UID/GID resolution
 # This fixes "cannot find name for user ID" errors and makes tools
 # like `id`, `whoami`, `ls -la` show proper usernames instead of numeric IDs.

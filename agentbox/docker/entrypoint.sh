@@ -69,6 +69,16 @@ if [[ "$(id -u)" -eq 0 ]]; then
         chown "$HOST_UID:$HOST_GID" "$USER_HOME"
     fi
 
+    # Create ~/.local/bin symlink for claude (Claude Code expects it there)
+    local_bin="$USER_HOME/.local/bin"
+    if [[ ! -d "$local_bin" ]]; then
+        mkdir -p "$local_bin"
+        chown "$HOST_UID:$HOST_GID" "$USER_HOME/.local" "$local_bin"
+    fi
+    if [[ ! -e "$local_bin/claude" ]] && [[ -x /usr/local/bin/claude ]]; then
+        ln -sf /usr/local/bin/claude "$local_bin/claude"
+    fi
+
     # Drop privileges and execute the command
     log_info "Running as $USERNAME (UID=$HOST_UID, GID=$HOST_GID)"
     exec gosu "$HOST_UID:$HOST_GID" "$@"

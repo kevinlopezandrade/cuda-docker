@@ -14,6 +14,7 @@ IMAGE=""
 CMD=""
 USE_WORKTREE=0
 BRANCH=""
+KEEP_ALIVE=0
 declare -a EXTRA_TOOLS=()
 declare -a EXTRA_VOLUMES=()
 declare -a BACKEND_EXTRA_ARGS=()
@@ -71,6 +72,10 @@ parse_common_args() {
             --branch)
                 BRANCH="$2"
                 shift 2
+                ;;
+            -k|--keep)
+                KEEP_ALIVE=1
+                shift
                 ;;
             --image)
                 IMAGE="$2"
@@ -177,6 +182,7 @@ build_mounts() {
 
     # Mount agent config directories
     mount_codex_config
+    mount_claude_config
 
     log_debug "Mounts ($(mounts_count)):"
     if [[ "${AGENTBOX_DEBUG:-0}" == "1" ]]; then

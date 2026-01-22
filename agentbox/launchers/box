@@ -39,6 +39,7 @@ OPTIONS:
   -p, --proj PATH       Project directory (default: current directory)
   -w, --worktree        Create a git worktree for parallel development
       --branch NAME     Branch name for worktree (default: agent/<id>)
+  -k, --keep            Keep container running after shell exit
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
   -v, --volume SPEC     Additional volume mount (repeatable)
                         Formats: /path, /path:ro, /src:/dst, /src:/dst:ro
@@ -67,6 +68,7 @@ EXAMPLES:
   box -w --branch feature/auth -p ~/proj # Worktree with branch
   box -v /data/datasets                  # Mount datasets directory
   box -v /data:/data:ro -v /models       # Multiple volume mounts
+  box -k -p ~/projects/myapp             # Keep container running after exit
 
 EOF
 }
@@ -147,7 +149,7 @@ main() {
     docker_args+=("${BACKEND_EXTRA_ARGS[@]}")
 
     # Execute
-    docker_run "$IMAGE" "$PROJ" "$CMD" "${docker_args[@]}"
+    docker_run "$IMAGE" "$PROJ" "$CMD" "$KEEP_ALIVE" "${docker_args[@]}"
 }
 
 main "$@"

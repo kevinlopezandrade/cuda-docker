@@ -83,6 +83,19 @@ AGENTBOX_DEFAULT_MODE="patch"
 # AGENTBOX_DOCKER_GPUS="all"
 
 #######################################
+# Environment variable passthrough
+#######################################
+# Environment variables to pass from host to container.
+# Only passes variables that are actually set on the host.
+
+AGENTBOX_PASSTHROUGH_ENV=(
+    "OPENAI_API_KEY"
+    # "ANTHROPIC_API_KEY"
+    # "GITHUB_TOKEN"
+    # "HF_TOKEN"
+)
+
+#######################################
 # Advanced settings
 #######################################
 # Enable debug logging

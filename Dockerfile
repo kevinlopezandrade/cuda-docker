@@ -101,6 +101,9 @@ RUN sh /uv-installer.sh && rm /uv-installer.sh && \
 # Silence bell (noop afplay for tools that expect macOS)
 RUN echo '#!/bin/sh' > /usr/local/bin/afplay && chmod +x /usr/local/bin/afplay
 
+# Add ~/.local/bin to PATH for all login shells (Claude Code, uv, etc. install there)
+RUN echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/local-bin.sh
+
 # Environment for tools
 ENV NODE_OPTIONS=--unhandled-rejections=strict \
     UV_LINK_MODE=copy \
@@ -127,7 +130,7 @@ FROM base AS standard
 COPY agentbox/bin/git /usr/local/bin/git
 RUN chmod +x /usr/local/bin/git
 
-CMD ["bash"]
+CMD ["bash", "-l"]
 
 
 # ==========================================
@@ -154,4 +157,4 @@ RUN mkdir -p /etc/apt/preferences.d && \
     printf 'Package: git*\nPin: release *\nPin-Priority: -1\n' \
         > /etc/apt/preferences.d/deny-git
 
-CMD ["bash"]
+CMD ["bash", "-l"]

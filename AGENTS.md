@@ -38,7 +38,8 @@ When running AI coding agents (Claude Code, Codex, etc.) in containers, several 
 │   └── slurm.sh         # Slurm/Pyxis-specific functions
 ├── launchers/
 │   ├── box              # Docker launcher
-│   └── sbox             # Slurm launcher
+│   ├── sbox             # Slurm launcher
+│   └── wt-init          # Initialize submodules for worktrees
 ├── config.sh            # User configuration
 └── install.sh           # Installation script
 
@@ -81,6 +82,14 @@ AGENTBOX_IMAGE_SECURE="cuda-dev:secure"
 
 # Default mode: patch, yolo, or lockdown
 AGENTBOX_DEFAULT_MODE="patch"
+
+# Environment variables to pass from host to container
+AGENTBOX_PASSTHROUGH_ENV=(
+    "ANTHROPIC_API_KEY"
+    "OPENAI_API_KEY"
+    # "GITHUB_TOKEN"
+    # "HF_TOKEN"
+)
 ```
 
 ## Usage
@@ -137,6 +146,13 @@ box -w --branch feature/auth -p ~/projects/myapp
 sbox -w -p ~/projects/myapp -- --gpus 1
 ```
 
+Re-entering an existing worktree (after container exit):
+
+```bash
+# Just point to the worktree path directly (no -w flag)
+box -p ~/projects/myapp-agents/wt-a3f2
+```
+
 After the agent finishes:
 
 ```bash
@@ -153,6 +169,30 @@ git merge agent/a3f2  # or cherry-pick specific commits
 git worktree remove ~/projects/myapp-agents/wt-a3f2
 git branch -d agent/a3f2
 ```
+
+### Submodules in Worktrees
+
+If your project has submodules, use `wt-init` to set them up as linked worktrees (instead of fresh clones). This shares git object storage and makes branches visible across both the main repo and worktree.
+
+```bash
+# First, create the worktree
+box -w --branch feature/auth -p ~/projects/myapp
+
+# Inside the container, from the worktree root:
+cd ~/projects/myapp-agents/wt-auth
+wt-init
+```
+
+`wt-init` will:
+1. Find the main repo automatically
+2. For each submodule, create a worktree from the main repo's submodule
+3. Create a branch with the same name as the current worktree's branch (e.g., `feature/auth`)
+4. Check out the pinned commit for that submodule
+
+**Requirements:**
+- Must be run from the root of a worktree (not the main repo)
+- Submodules must be initialized in the main repo first
+- Worktree must be on a branch (not detached HEAD)
 
 ### Inside the Container
 
@@ -220,6 +260,9 @@ docker build --target secure -t cuda-dev:secure .
 ### Image Design
 
 - **Entrypoint pattern**: Container starts as root, entrypoint creates `/home/$USER` with correct ownership, then drops privileges via `gosu`
+- **Login shell by default**: Runs `bash -l` so `/etc/profile.d/` scripts are sourced
+- **`~/.local/bin` in PATH**: Via `/etc/profile.d/local-bin.sh`, tools like Claude Code work without warnings
+- **Claude symlink**: Entrypoint creates `~/.local/bin/claude` -> `/usr/local/bin/claude`
 - **Git wrapper baked in**: No PATH manipulation needed, wrapper at `/usr/local/bin/git` takes precedence
 - **Identity from host**: `/etc/passwd` and `/etc/group` mounted for UID/GID resolution
 - **Tooling from host**: Your `~/scripts` mounted and available
@@ -255,6 +298,10 @@ $PROJ/.git:$PROJ/.git:ro  # (in patch/lockdown mode)
 ~/scripts:~/scripts:rw
 ~/scripts/.git:~/scripts/.git:ro
 
+# Agent config directories
+~/.claude:~/.claude:rw
+~/.codex:~/.codex:rw
+
 # Identity resolution
 /etc/passwd:/etc/passwd:ro
 /etc/group:/etc/group:ro
@@ -263,12 +310,16 @@ $PROJ/.git:$PROJ/.git:ro  # (in patch/lockdown mode)
 ### Environment Variables
 
 ```bash
-HOST_UID=1000                # Your UID (for entrypoint)
-HOST_GID=1000                # Your GID (for entrypoint)
+HOST_UID=1000                  # Your UID (for entrypoint)
+HOST_GID=1000                  # Your GID (for entrypoint)
 GIT_ALLOW_PROTOCOL=file:https  # Allow https, block ssh
 GIT_TERMINAL_PROMPT=0          # No interactive prompts
 GIT_CONFIG_GLOBAL=/dev/null    # Ignore global git config
 AGENT_ALLOW_COMMIT=0|1         # Controls git wrapper behavior
+
+# Passthrough from host (configured via AGENTBOX_PASSTHROUGH_ENV)
+ANTHROPIC_API_KEY=...          # If set on host
+OPENAI_API_KEY=...             # If set on host
 ```
 
 ## Security Model

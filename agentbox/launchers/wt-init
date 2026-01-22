@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# wt-init - Initialize submodules for a worktree using worktree-based linking
+#
+# This script sets up submodules in the current worktree by creating worktrees
+# from the main repo's submodules, rather than cloning fresh copies. This means:
+#   - Branches created in submodules are visible in the main repo's submodule
+#   - Git object storage is shared (efficient)
+#   - Works nicely with `box -w -p` workflow
+#
+# Usage: Run from the root of a worktree (not the main repo)
+
+# Must be run from the root of a worktree (not the main repo)
+if [ ! -f .git ]; then
+  echo "ERROR: Must be run from the root of a worktree."
+  echo "       (.git should be a file, not a directory)"
+  exit 1
+fi
+
+if ! grep -q '^gitdir:' .git; then
+  echo "ERROR: .git file doesn't contain a gitdir pointer."
+  exit 1
+fi
+
+# Get the current worktree's branch name
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null) || {
+  echo "ERROR: Current worktree is in detached HEAD state."
+  echo "       Please checkout a branch first."
+  exit 1
+}
+
+# Find the main repo (first worktree is always the main one)
+main_root=$(git worktree list --porcelain | head -1 | sed 's/^worktree //')
+
+# Current worktree path
+current_wt=$(pwd)
+
+echo "Current worktree: $current_wt"
+echo "Current branch: $current_branch"
+echo "Main repo: $main_root"
+echo ""
+
+# Check if we have submodules
+if [ ! -f .gitmodules ]; then
+  echo "No .gitmodules file found. Nothing to do."
+  exit 0
+fi
+
+# Process each submodule
+while IFS= read -r -d '' key; do
+  name=${key#submodule.}; name=${name%.path}
+
+  sm_path=$(git config -f .gitmodules --get "submodule.${name}.path")
+  sm_abs_main="$main_root/$sm_path"
+  sm_abs_current="$current_wt/$sm_path"
+
+  echo "Processing submodule: $sm_path"
+
+  # Check if submodule is initialized in main repo
+  if [ ! -e "$sm_abs_main/.git" ]; then
+    echo "ERROR: Submodule '$sm_path' is not initialized in the main worktree."
+    echo "       Run 'git submodule update --init -- $sm_path' in $main_root first."
+    exit 1
+  fi
+
+  # Check if destination is empty
+  if [ -e "$sm_abs_current/.git" ] || [ -n "$(ls -A "$sm_abs_current" 2>/dev/null || true)" ]; then
+    echo "ERROR: $sm_abs_current is not empty."
+    echo "       Remove it (carefully) and rerun."
+    exit 1
+  fi
+
+  # Get the commit SHA this worktree expects for the submodule
+  sm_sha=$(git ls-tree -d HEAD -- "$sm_path" | awk '{print $3}')
+
+  if [ -z "$sm_sha" ]; then
+    echo "ERROR: Could not determine expected commit for submodule '$sm_path'."
+    exit 1
+  fi
+
+  echo "  Expected commit: $sm_sha"
+  echo "  Creating branch: $current_branch"
+
+  # Create a worktree from main's submodule with a new branch at the expected commit
+  git -C "$sm_abs_main" worktree add -b "$current_branch" "$sm_abs_current" "$sm_sha"
+
+  echo "  Done."
+  echo ""
+
+done < <(git config -z -f .gitmodules --name-only --get-regexp '^submodule\..*\.path$')
+
+echo "All submodules initialized as worktrees."
+echo "Branch '$current_branch' created in each submodule."

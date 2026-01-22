@@ -136,6 +136,7 @@ main() {
     log_info "Symlinking launchers..."
     ln -sf "${SCRIPT_DIR}/launchers/box" "${INSTALL_DIR}/launchers/box"
     ln -sf "${SCRIPT_DIR}/launchers/sbox" "${INSTALL_DIR}/launchers/sbox"
+    ln -sf "${SCRIPT_DIR}/launchers/wt-init" "${INSTALL_DIR}/launchers/wt-init"
     log_success "Launchers linked"
 
     # Install config template

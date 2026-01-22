@@ -115,6 +115,7 @@ docker_build_command() {
 #   $1 - Image name
 #   $2 - Working directory
 #   $3 - Command to run in container (optional)
+#   $4 - Keep alive flag (0 or 1)
 #   $@ - Additional docker args (passed before image)
 # Globals:
 #   AGENTBOX_MOUNTS
@@ -123,16 +124,26 @@ docker_run() {
     local image="$1"
     local workdir="$2"
     local container_cmd="${3:-}"
-    shift 3 || shift $#
+    local keep_alive="${4:-0}"
+    shift 4 || shift $#
     local -a extra_args=("$@")
 
     require_command docker "Please install Docker."
+
+    # Generate container name from project directory
+    local project_name
+    project_name="$(basename "$workdir")"
+    local container_name="agentbox-${project_name}"
 
     local -a cmd=()
 
     # Build base command
     # Note: no --user flag; entrypoint handles privilege dropping via HOST_UID/HOST_GID
-    cmd+=(docker run --rm -it)
+    if [[ "$keep_alive" -eq 1 ]]; then
+        cmd+=(docker run -d --name "$container_name")
+    else
+        cmd+=(docker run --rm -it)
+    fi
 
     # Working directory
     cmd+=(-w "$workdir")
@@ -157,15 +168,43 @@ docker_run() {
     # Image
     cmd+=("$image")
 
-    # Container command (if specified)
-    if [[ -n "$container_cmd" ]]; then
+    # Container command
+    if [[ "$keep_alive" -eq 1 ]]; then
+        # Keep-alive mode: run sleep infinity as PID 1
+        cmd+=(sleep infinity)
+    elif [[ -n "$container_cmd" ]]; then
         cmd+=("$container_cmd")
     fi
 
     log_debug "Docker command: ${cmd[*]}"
-    log_info "Launching Docker container..."
 
-    exec "${cmd[@]}"
+    if [[ "$keep_alive" -eq 1 ]]; then
+        log_info "Starting persistent container: $container_name"
+
+        # Check if container already exists
+        if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+                log_info "Container already running, attaching..."
+            else
+                log_info "Container exists but stopped, starting..."
+                docker start "$container_name" >/dev/null
+            fi
+        else
+            # Start new container
+            "${cmd[@]}" >/dev/null
+        fi
+
+        echo ""
+        log_info "To reattach later: docker exec -it $container_name bash"
+        log_info "To stop: docker stop $container_name && docker rm $container_name"
+        echo ""
+
+        # Exec into the container
+        exec docker exec -it "$container_name" bash
+    else
+        log_info "Launching Docker container..."
+        exec "${cmd[@]}"
+    fi
 }
 
 #######################################

@@ -118,6 +118,26 @@ env_host_identity() {
     log_debug "Host identity: UID=$(id -u), GID=$(id -g)"
 }
 
+# Pass through environment variables from host if they exist
+# Globals:
+#   AGENTBOX_PASSTHROUGH_ENV (from config, array of var names)
+#   AGENTBOX_ENV
+env_passthrough() {
+    if [[ -z "${AGENTBOX_PASSTHROUGH_ENV[*]:-}" ]]; then
+        log_debug "No passthrough env vars configured"
+        return 0
+    fi
+
+    for var_name in "${AGENTBOX_PASSTHROUGH_ENV[@]}"; do
+        if [[ -n "${!var_name:-}" ]]; then
+            env_set "$var_name" "${!var_name}"
+            log_debug "Passthrough env: $var_name"
+        else
+            log_debug "Passthrough env not set on host, skipping: $var_name"
+        fi
+    done
+}
+
 # Set up all standard agentbox environment
 # Arguments:
 #   $1 - Mode: "patch", "yolo", or "lockdown"
@@ -130,6 +150,7 @@ env_setup_all() {
     env_agent_mode "$mode"
     env_policy_path
     env_host_identity
+    env_passthrough
 
     # Add agentbox marker
     env_set "AGENTBOX" "1"
