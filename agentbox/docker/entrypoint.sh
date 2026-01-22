@@ -90,6 +90,17 @@ if [[ "$(id -u)" -eq 0 ]]; then
         chown "$HOST_UID:$HOST_GID" "$config_dir"
     fi
 
+    # Ensure ~/.local/share exists with correct ownership
+    # (Docker may create it as root when mounting subdirs like ~/.local/share/uv)
+    local_share_dir="$USER_HOME/.local/share"
+    if [[ -d "$local_share_dir" ]] && [[ "$(stat -c %u "$local_share_dir")" != "$HOST_UID" ]]; then
+        log_info "Fixing ownership of .local/share directory"
+        chown "$HOST_UID:$HOST_GID" "$local_share_dir"
+    elif [[ ! -d "$local_share_dir" ]]; then
+        mkdir -p "$local_share_dir"
+        chown "$HOST_UID:$HOST_GID" "$USER_HOME/.local" "$local_share_dir"
+    fi
+
     # Drop privileges and execute the command
     log_info "Running as $USERNAME (UID=$HOST_UID, GID=$HOST_GID)"
     exec gosu "$HOST_UID:$HOST_GID" "$@"

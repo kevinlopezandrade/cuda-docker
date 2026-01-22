@@ -321,6 +321,21 @@ mount_marimo_config() {
     fi
 }
 
+# Mount uv cache directory (experimental)
+# This shares the host's uv cache with containers to reuse
+# downloaded packages and installed Python versions.
+# Globals:
+#   AGENTBOX_MOUNTS
+mount_uv_cache() {
+    local uv_dir="$HOME/.local/share/uv"
+    if [[ -d "$uv_dir" ]]; then
+        mount_mirror "$uv_dir" "rw"
+        log_debug "Mounted ~/.local/share/uv for uv cache (experimental)"
+    else
+        log_warn "UV cache directory does not exist: $uv_dir"
+    fi
+}
+
 # Mount /etc/passwd and /etc/group for UID/GID resolution
 # This fixes "cannot find name for user ID" errors and makes tools
 # like `id`, `whoami`, `ls -la` show proper usernames instead of numeric IDs.

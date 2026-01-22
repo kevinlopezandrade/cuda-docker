@@ -15,6 +15,7 @@ CMD=""
 USE_WORKTREE=0
 BRANCH=""
 KEEP_ALIVE=0
+SHARE_UV_CACHE=1
 declare -a EXTRA_TOOLS=()
 declare -a EXTRA_VOLUMES=()
 declare -a BACKEND_EXTRA_ARGS=()
@@ -87,6 +88,10 @@ parse_common_args() {
                 ;;
             --debug)
                 export AGENTBOX_DEBUG=1
+                shift
+                ;;
+            --no-uv-cache)
+                SHARE_UV_CACHE=0
                 shift
                 ;;
             --)
@@ -184,6 +189,12 @@ build_mounts() {
     mount_codex_config
     mount_claude_config
     mount_marimo_config
+
+    # Mount uv cache if requested (experimental)
+    if [[ $SHARE_UV_CACHE -eq 1 ]]; then
+        log_warn "[EXPERIMENTAL] Mounting UV cache (~/.local/share/uv) - this feature is experimental"
+        mount_uv_cache
+    fi
 
     log_debug "Mounts ($(mounts_count)):"
     if [[ "${AGENTBOX_DEBUG:-0}" == "1" ]]; then
@@ -342,6 +353,15 @@ launcher_setup() {
 
     # Resolve project path
     PROJ="$(resolve_path "$PROJ")"
+
+    # Resolve symlinks to get the actual path
+    # This ensures the container mounts the real path, not the symlink path
+    if [[ -L "$PROJ" ]]; then
+        local resolved
+        resolved="$(readlink -f "$PROJ")"
+        log_info "Resolved symlink: $PROJ -> $resolved"
+        PROJ="$resolved"
+    fi
 
     # Security: ensure no credentials will be mounted
     validate_no_credentials
