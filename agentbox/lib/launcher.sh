@@ -15,6 +15,7 @@ CMD=""
 USE_WORKTREE=0
 BRANCH=""
 declare -a EXTRA_TOOLS=()
+declare -a EXTRA_VOLUMES=()
 declare -a BACKEND_EXTRA_ARGS=()
 
 #######################################
@@ -41,6 +42,10 @@ parse_common_args() {
                 ;;
             -t|--tools)
                 EXTRA_TOOLS+=("$2")
+                shift 2
+                ;;
+            -v|--volume)
+                EXTRA_VOLUMES+=("$2")
                 shift 2
                 ;;
             -m|--mode)
@@ -148,7 +153,7 @@ handle_worktree() {
 
 # Build all mounts for the container
 # Globals:
-#   PROJ, MODE, EXTRA_TOOLS
+#   PROJ, MODE, EXTRA_TOOLS, EXTRA_VOLUMES
 build_mounts() {
     mounts_reset
     mount_project "$PROJ" "$MODE"
@@ -157,6 +162,14 @@ build_mounts() {
     # Mount extra tools specified on command line
     for tool in "${EXTRA_TOOLS[@]}"; do
         mount_tooling "$tool"
+    done
+
+    # Mount configured volumes from config
+    mount_all_volumes
+
+    # Mount extra volumes specified on command line
+    for vol in "${EXTRA_VOLUMES[@]}"; do
+        mount_volume "$vol"
     done
 
     # Mount /etc/passwd and /etc/group for UID/GID resolution
@@ -236,10 +249,21 @@ _path_has_git_credentials() {
     return 1
 }
 
+# Extract source path from a volume spec
+# Arguments:
+#   $1 - Volume specification (src, src:dst, or src:dst:flags)
+# Outputs:
+#   Source path
+_extract_volume_source() {
+    local spec="$1"
+    # Just get the first part before any colon
+    echo "${spec%%:*}"
+}
+
 # Validate that no sensitive credentials will be mounted
-# Checks project, tooling, and extra tools
+# Checks project, tooling, extra tools, and extra volumes
 # Globals:
-#   PROJ, EXTRA_TOOLS, AGENTBOX_TOOLS
+#   PROJ, EXTRA_TOOLS, AGENTBOX_TOOLS, EXTRA_VOLUMES, AGENTBOX_VOLUMES
 validate_no_credentials() {
     local -a paths_to_check=()
 
@@ -253,6 +277,17 @@ validate_no_credentials() {
     if [[ -n "${AGENTBOX_TOOLS[*]:-}" ]]; then
         for tool in "${AGENTBOX_TOOLS[@]}"; do
             paths_to_check+=("$tool")
+        done
+    fi
+
+    # Check extra volumes (extract source path from spec)
+    for vol in "${EXTRA_VOLUMES[@]}"; do
+        paths_to_check+=("$(_extract_volume_source "$vol")")
+    done
+
+    if [[ -n "${AGENTBOX_VOLUMES[*]:-}" ]]; then
+        for vol in "${AGENTBOX_VOLUMES[@]}"; do
+            paths_to_check+=("$(_extract_volume_source "$vol")")
         done
     fi
 

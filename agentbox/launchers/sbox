@@ -40,6 +40,8 @@ OPTIONS:
   -w, --worktree        Create a git worktree for parallel development
       --branch NAME     Branch name for worktree (default: agent/<id>)
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
+  -v, --volume SPEC     Additional volume mount (repeatable)
+                        Formats: /path, /path:ro, /src:/dst, /src:/dst:ro
   -m, --mode MODE       Agent mode: patch, yolo, lockdown (default: patch)
   -n, --name NAME       Container name (enables reattachment)
       --image IMAGE     Container image (overrides config default)
@@ -62,6 +64,7 @@ EXAMPLES:
   sbox -p ~/proj -- --gpus 4 --mem 64G    # With Slurm resources
   sbox attach mydev                       # Reattach to container
   sbox -w -p ~/projects/myapp             # Create worktree
+  sbox -v /data/datasets -p ~/proj        # Mount datasets directory
 
 REATTACHMENT:
   sbox attach NAME [-- SLURM_ARGS...]

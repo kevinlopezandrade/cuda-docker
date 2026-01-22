@@ -40,6 +40,8 @@ OPTIONS:
   -w, --worktree        Create a git worktree for parallel development
       --branch NAME     Branch name for worktree (default: agent/<id>)
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
+  -v, --volume SPEC     Additional volume mount (repeatable)
+                        Formats: /path, /path:ro, /src:/dst, /src:/dst:ro
   -m, --mode MODE       Agent mode: patch, yolo, lockdown (default: patch)
       --image IMAGE     Container image (overrides config default)
       --gpus SPEC       GPU specification (e.g., "all", "2")
@@ -63,6 +65,8 @@ EXAMPLES:
   box -- --memory 32g --shm-size 16g     # Extra docker args
   box -w -p ~/projects/myapp             # Create worktree
   box -w --branch feature/auth -p ~/proj # Worktree with branch
+  box -v /data/datasets                  # Mount datasets directory
+  box -v /data:/data:ro -v /models       # Multiple volume mounts
 
 EOF
 }

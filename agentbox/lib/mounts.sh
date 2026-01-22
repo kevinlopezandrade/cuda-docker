@@ -208,6 +208,86 @@ mount_all_tooling() {
     done
 }
 
+# Add a manual volume mount
+# Supports formats:
+#   /host/path                     -> mounts as /host/path (rw)
+#   /host/path:ro                  -> mounts as /host/path (ro)
+#   /host/path:/container/path     -> mounts at /container/path (rw)
+#   /host/path:/container/path:ro  -> mounts at /container/path (ro)
+# Arguments:
+#   $1 - Volume specification
+# Globals:
+#   AGENTBOX_MOUNTS
+mount_volume() {
+    local spec="$1"
+    local src dst flags
+    local mirror=0
+
+    # Parse the volume spec
+    IFS=':' read -ra parts <<< "$spec"
+
+    if [[ ${#parts[@]} -eq 1 ]]; then
+        # Just source path - mirror mount, rw
+        src="${parts[0]}"
+        mirror=1
+        flags="rw"
+    elif [[ ${#parts[@]} -eq 2 ]]; then
+        # Could be src:dst or src:flags
+        if [[ "${parts[1]}" == "ro" || "${parts[1]}" == "rw" ]]; then
+            # src:flags - mirror mount with explicit flags
+            src="${parts[0]}"
+            mirror=1
+            flags="${parts[1]}"
+        else
+            # src:dst - rw by default
+            src="${parts[0]}"
+            dst="${parts[1]}"
+            flags="rw"
+        fi
+    elif [[ ${#parts[@]} -ge 3 ]]; then
+        # src:dst:flags
+        src="${parts[0]}"
+        dst="${parts[1]}"
+        flags="${parts[2]}"
+    fi
+
+    # Validate flags
+    if [[ "$flags" != "rw" && "$flags" != "ro" ]]; then
+        log_warn "Invalid mount flags '$flags' for volume $spec, using 'rw'"
+        flags="rw"
+    fi
+
+    # Resolve source path
+    if [[ ! -e "$src" ]]; then
+        log_warn "Volume source does not exist, skipping: $src"
+        return 0
+    fi
+    src="$(resolve_path "$src")"
+
+    # For mirror mounts, set dst after resolving src
+    if [[ $mirror -eq 1 ]]; then
+        dst="$src"
+    fi
+
+    AGENTBOX_MOUNTS+=("${src}:${dst}:${flags}")
+    log_debug "Volume mount added: ${src} -> ${dst} (${flags})"
+}
+
+# Add all configured volumes
+# Globals:
+#   AGENTBOX_VOLUMES (from config)
+#   AGENTBOX_MOUNTS
+mount_all_volumes() {
+    if [[ -z "${AGENTBOX_VOLUMES[*]:-}" ]]; then
+        log_debug "No volumes configured"
+        return 0
+    fi
+
+    for vol in "${AGENTBOX_VOLUMES[@]}"; do
+        mount_volume "$vol"
+    done
+}
+
 # Add policy bin mount
 # Globals:
 #   AGENTBOX_POLICY_BIN

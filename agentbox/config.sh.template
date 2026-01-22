@@ -19,6 +19,24 @@ AGENTBOX_TOOLS=(
 )
 
 #######################################
+# Extra volume mounts
+#######################################
+# Additional paths to mount into containers.
+# Useful for datasets, model weights, or other data not in git repos.
+#
+# Supported formats:
+#   "/path"                          - Mount at same path (read-write)
+#   "/path:ro"                       - Mount at same path (read-only)
+#   "/host/path:/container/path"     - Mount at different path (read-write)
+#   "/host/path:/container/path:ro"  - Mount at different path (read-only)
+
+AGENTBOX_VOLUMES=(
+    # "$HOME/datasets"
+    # "/data/models:ro"
+    # "/data/weights:/weights:ro"
+)
+
+#######################################
 # Default images
 #######################################
 # These are used when --image is not specified.
