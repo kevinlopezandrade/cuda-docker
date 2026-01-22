@@ -147,7 +147,8 @@ require_file() {
     fi
 }
 
-# Validate that a path contains a .git directory (is a git repo)
+# Validate that a path is a git repo (has .git directory or file)
+# Handles regular repos (.git directory), worktrees (.git file), and submodules (.git file)
 # Arguments:
 #   $1 - Path to validate
 #   $2 - Description for error message
@@ -155,8 +156,9 @@ require_git_repo() {
     local path="$1"
     local desc="${2:-Path}"
     require_directory "$path" "$desc"
-    if [[ ! -d "${path}/.git" ]]; then
-        die 1 "$desc is not a git repository (no .git directory): $path"
+    # Accept .git as directory (regular repo) or file (worktree/submodule)
+    if [[ ! -d "${path}/.git" && ! -f "${path}/.git" ]]; then
+        die 1 "$desc is not a git repository (no .git): $path"
     fi
 }
 
@@ -224,6 +226,56 @@ join_by() {
     shift
     printf '%s' "$first"
     printf '%s' "${@/#/$delimiter}"
+}
+
+#######################################
+# Git utilities
+#######################################
+
+# Find the root git directory for a repo, worktree, or submodule
+# Arguments:
+#   $1 - Path to git repo, worktree, or submodule
+# Outputs:
+#   Path to the root git directory (the one with actual .git directory)
+# Returns:
+#   0 on success, 1 if not a git repo
+find_git_root() {
+    local path="$1"
+
+    # Use git rev-parse to find the toplevel and git-dir
+    local toplevel
+    toplevel="$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" || return 1
+
+    local git_dir
+    git_dir="$(git -C "$path" rev-parse --git-dir 2>/dev/null)" || return 1
+
+    # If git_dir is relative, make it absolute
+    if [[ "$git_dir" != /* ]]; then
+        git_dir="$(cd "$path" && cd "$git_dir" && pwd)"
+    fi
+
+    # For regular repos: git_dir is /path/to/repo/.git
+    # For worktrees: git_dir is /path/to/main/.git/worktrees/<name>
+    # For submodules: git_dir is /path/to/parent/.git/modules/<name>
+
+    # Check if this is a worktree (git_dir contains /worktrees/)
+    if [[ "$git_dir" == */.git/worktrees/* ]]; then
+        # Extract the main repo path: /path/to/repo/.git/worktrees/name -> /path/to/repo
+        local main_git_dir="${git_dir%/worktrees/*}"
+        echo "${main_git_dir%/.git}"
+        return 0
+    fi
+
+    # Check if this is a submodule (git_dir contains /modules/)
+    if [[ "$git_dir" == */.git/modules/* ]]; then
+        # For submodules, return the submodule's working directory (not the parent)
+        # because the user wants to work on the submodule itself
+        echo "$toplevel"
+        return 0
+    fi
+
+    # Regular repo - return toplevel
+    echo "$toplevel"
 }
 
 #######################################

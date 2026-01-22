@@ -73,6 +73,52 @@ mount_mirror() {
 # High-level mount builders
 #######################################
 
+# Resolve the git directory that needs to be mounted for a repo/worktree/submodule
+# Arguments:
+#   $1 - Path to git repo, worktree, or submodule
+# Outputs:
+#   Path to the .git directory that controls this repo
+#   Empty string if not a git repo
+# Returns:
+#   0 if found, 1 if not a git repo
+_resolve_git_dir() {
+    local path="$1"
+
+    if [[ -d "${path}/.git" ]]; then
+        # Regular git repo - .git is a directory
+        echo "${path}/.git"
+        return 0
+    elif [[ -f "${path}/.git" ]]; then
+        # Worktree or submodule - .git is a file
+        local gitdir_line
+        gitdir_line="$(head -1 "${path}/.git")"
+
+        if [[ "$gitdir_line" =~ ^gitdir:\ (.+)$ ]]; then
+            local gitdir="${BASH_REMATCH[1]}"
+
+            # Handle relative paths
+            if [[ "$gitdir" != /* ]]; then
+                gitdir="$(cd "$path" && cd "$gitdir" && pwd)"
+            fi
+
+            # If this is a worktree, strip the /worktrees/<name> suffix first
+            # This handles both:
+            #   - Regular worktrees: /repo/.git/worktrees/name -> /repo/.git
+            #   - Submodule worktrees: /parent/.git/modules/sub/worktrees/name -> /parent/.git/modules/sub
+            if [[ "$gitdir" == */worktrees/* ]]; then
+                gitdir="${gitdir%/worktrees/*}"
+            fi
+
+            # Return the resolved git directory
+            # Could be: main .git, or submodule's git database in /modules/
+            echo "$gitdir"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
 # Add project mounts based on mode
 # Arguments:
 #   $1 - Project path
@@ -90,62 +136,34 @@ mount_project() {
     # Always mirror-mount the project directory
     mount_mirror "$proj" "rw"
 
-    # Handle .git based on mode
-    # Note: Regular repos have .git as directory, worktrees have .git as file
-    if [[ -d "${proj}/.git" ]]; then
-        # Regular git repo - .git is a directory
+    # Resolve the git directory (handles regular repos, worktrees, and submodules)
+    local git_dir
+    if git_dir="$(_resolve_git_dir "$proj")"; then
         case "$mode" in
             patch|lockdown)
-                # Read-only .git prevents commits
-                mount_mirror "${proj}/.git" "ro"
-                log_info "Project .git mounted read-only (mode: $mode)"
+                mount_mirror "$git_dir" "ro"
+                log_info "Git directory mounted read-only (mode: $mode): $git_dir"
                 ;;
             yolo)
-                # .git stays read-write (already included in project mount)
-                log_info "Project .git is writable (mode: yolo)"
+                # Mount the git directory read-write
+                # For regular repos, it's already in the project mount
+                # For worktrees/submodules, we need to explicitly mount it
+                if [[ "$git_dir" != "${proj}/.git" ]]; then
+                    mount_mirror "$git_dir" "rw"
+                fi
+                log_info "Git directory is writable (mode: yolo): $git_dir"
                 ;;
             *)
                 die 1 "Unknown mode: $mode"
                 ;;
         esac
-    elif [[ -f "${proj}/.git" ]]; then
-        # Git worktree - .git is a file pointing to main repo
-        # Parse the .git file to find the main repo's .git directory
-        local gitdir_line
-        gitdir_line="$(head -1 "${proj}/.git")"
-
-        if [[ "$gitdir_line" =~ ^gitdir:\ (.+)$ ]]; then
-            local gitdir="${BASH_REMATCH[1]}"
-            # gitdir is something like /home/kev/pylance/.git/worktrees/name
-            # We need the main .git directory: /home/kev/pylance/.git
-            local main_gitdir="${gitdir%/worktrees/*}"
-
-            if [[ -d "$main_gitdir" ]]; then
-                case "$mode" in
-                    patch|lockdown)
-                        mount_mirror "$main_gitdir" "ro"
-                        log_info "Worktree: main .git mounted read-only (mode: $mode)"
-                        ;;
-                    yolo)
-                        mount_mirror "$main_gitdir" "rw"
-                        log_info "Worktree: main .git mounted read-write (mode: yolo)"
-                        ;;
-                    *)
-                        die 1 "Unknown mode: $mode"
-                        ;;
-                esac
-            else
-                log_warn "Could not find main repo .git directory: $main_gitdir"
-            fi
-        else
-            log_warn "Could not parse worktree .git file: ${proj}/.git"
-        fi
     else
         log_warn "Project has no .git: $proj"
     fi
 }
 
 # Add tooling repo mount (worktree RW, .git RO)
+# Handles regular repos, worktrees, and submodules
 # Arguments:
 #   $1 - Tooling repo path
 # Globals:
@@ -157,13 +175,15 @@ mount_tooling() {
 
     tool="$(resolve_path "$tool")"
 
-    # Mount worktree read-write
+    # Mount working directory read-write
     mount_mirror "$tool" "rw"
 
     # Mount .git read-only (prevents commits)
-    if [[ -d "${tool}/.git" ]]; then
-        mount_mirror "${tool}/.git" "ro"
-        log_debug "Tooling .git mounted read-only: $tool"
+    # Use the same resolver as mount_project for consistency
+    local git_dir
+    if git_dir="$(_resolve_git_dir "$tool")"; then
+        mount_mirror "$git_dir" "ro"
+        log_debug "Tooling git directory mounted read-only: $git_dir"
     else
         log_warn "Tooling directory has no .git: $tool"
     fi
