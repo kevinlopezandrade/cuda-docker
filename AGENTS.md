@@ -109,6 +109,12 @@ box --yolo -p ~/projects/myapp
 # With GPUs
 box -p ~/projects/myapp --gpus all
 
+# With port forwarding (for Jupyter, Marimo, etc.)
+box -P 8888 -p ~/projects/myapp
+
+# Multiple ports
+box -P 8888 -P 3000 -p ~/projects/myapp
+
 # Pass extra docker args after --
 box -p ~/projects/myapp -- --memory 32g --shm-size 16g
 ```

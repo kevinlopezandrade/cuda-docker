@@ -310,6 +310,17 @@ mount_claude_config() {
     fi
 }
 
+# Mount marimo config directory
+# Globals:
+#   AGENTBOX_MOUNTS
+mount_marimo_config() {
+    local marimo_dir="$HOME/.config/marimo"
+    if [[ -d "$marimo_dir" ]]; then
+        mount_mirror "$marimo_dir" "rw"
+        log_debug "Mounted ~/.config/marimo for marimo config"
+    fi
+}
+
 # Mount /etc/passwd and /etc/group for UID/GID resolution
 # This fixes "cannot find name for user ID" errors and makes tools
 # like `id`, `whoami`, `ls -la` show proper usernames instead of numeric IDs.

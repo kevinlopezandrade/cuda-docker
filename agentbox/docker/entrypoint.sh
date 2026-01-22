@@ -79,6 +79,17 @@ if [[ "$(id -u)" -eq 0 ]]; then
         ln -sf /usr/local/bin/claude "$local_bin/claude"
     fi
 
+    # Ensure ~/.config exists with correct ownership
+    # (Docker may create it as root when mounting subdirs like ~/.config/marimo)
+    config_dir="$USER_HOME/.config"
+    if [[ -d "$config_dir" ]] && [[ "$(stat -c %u "$config_dir")" != "$HOST_UID" ]]; then
+        log_info "Fixing ownership of .config directory"
+        chown "$HOST_UID:$HOST_GID" "$config_dir"
+    elif [[ ! -d "$config_dir" ]]; then
+        mkdir -p "$config_dir"
+        chown "$HOST_UID:$HOST_GID" "$config_dir"
+    fi
+
     # Drop privileges and execute the command
     log_info "Running as $USERNAME (UID=$HOST_UID, GID=$HOST_GID)"
     exec gosu "$HOST_UID:$HOST_GID" "$@"

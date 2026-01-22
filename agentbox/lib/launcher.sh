@@ -183,6 +183,7 @@ build_mounts() {
     # Mount agent config directories
     mount_codex_config
     mount_claude_config
+    mount_marimo_config
 
     log_debug "Mounts ($(mounts_count)):"
     if [[ "${AGENTBOX_DEBUG:-0}" == "1" ]]; then

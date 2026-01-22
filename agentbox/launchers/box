@@ -43,6 +43,8 @@ OPTIONS:
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
   -v, --volume SPEC     Additional volume mount (repeatable)
                         Formats: /path, /path:ro, /src:/dst, /src:/dst:ro
+  -P, --port PORT       Publish container port to host (repeatable)
+                        Formats: 8888, 8888:8888, 127.0.0.1:8888:8888
   -m, --mode MODE       Agent mode: patch, yolo, lockdown (default: patch)
       --image IMAGE     Container image (overrides config default)
       --gpus SPEC       GPU specification (e.g., "all", "2")
@@ -69,6 +71,8 @@ EXAMPLES:
   box -v /data/datasets                  # Mount datasets directory
   box -v /data:/data:ro -v /models       # Multiple volume mounts
   box -k -p ~/projects/myapp             # Keep container running after exit
+  box -P 8888 -p ~/projects/myapp        # Jupyter/Marimo on port 8888
+  box -P 8888 -P 3000 -p ~/projects/myapp # Multiple ports
 
 EOF
 }
@@ -77,6 +81,7 @@ EOF
 # Docker-specific variables
 #######################################
 GPUS=""
+declare -a PORTS=()
 
 #######################################
 # Parse arguments
@@ -89,6 +94,10 @@ parse_args() {
         case "$1" in
             --gpus)
                 GPUS="$2"
+                shift 2
+                ;;
+            -P|--port)
+                PORTS+=("$2")
                 shift 2
                 ;;
             -h|--help)
@@ -144,6 +153,17 @@ main() {
     elif [[ -n "${AGENTBOX_DOCKER_GPUS:-}" ]]; then
         docker_args+=(--gpus "${AGENTBOX_DOCKER_GPUS}")
     fi
+
+    # Ports
+    for port in "${PORTS[@]}"; do
+        # If just a port number, map to same port on host (e.g., 2718 -> 2718:2718)
+        if [[ "$port" =~ ^[0-9]+$ ]]; then
+            docker_args+=(-p "$port:$port")
+        else
+            docker_args+=(-p "$port")
+        fi
+        log_info "Port forwarding: $port"
+    done
 
     # User-provided extra args
     docker_args+=("${BACKEND_EXTRA_ARGS[@]}")
