@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# agentbox-docker - Launch agentbox containers with Docker
+# sbox - Launch agentbox containers with Slurm/Pyxis
 #
-# Usage: agentbox-docker [OPTIONS] [-- DOCKER_ARGS...]
+# Usage: sbox [OPTIONS] [-- SLURM_ARGS...]
 #
 # shellcheck shell=bash
 
@@ -30,25 +30,25 @@ source "${AGENTBOX_LIB}/core.sh"
 source "${AGENTBOX_LIB}/mounts.sh"
 # shellcheck source=../lib/env.sh
 source "${AGENTBOX_LIB}/env.sh"
-# shellcheck source=../lib/docker.sh
-source "${AGENTBOX_LIB}/docker.sh"
+# shellcheck source=../lib/slurm.sh
+source "${AGENTBOX_LIB}/slurm.sh"
 
 #######################################
 # Usage
 #######################################
 usage() {
     cat <<EOF
-Usage: agentbox-docker [OPTIONS] [-- DOCKER_ARGS...]
+Usage: sbox [OPTIONS] [-- SLURM_ARGS...]
 
-Launch an agentbox container using Docker.
+Launch an agentbox container using Slurm with Pyxis.
 
 OPTIONS:
   -p, --proj PATH       Project directory (default: current directory)
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
   -m, --mode MODE       Agent mode: patch, yolo, lockdown (default: patch)
+  -n, --name NAME       Container name (enables reattachment)
       --image IMAGE     Container image (overrides config default)
-      --gpus SPEC       GPU specification (e.g., "all", "2")
-      --cmd COMMAND     Command to run in container (default: interactive shell)
+      --cmd COMMAND     Command to run in container (default: bash)
   -h, --help            Show this help message
       --debug           Enable debug logging
 
@@ -57,22 +57,31 @@ MODES:
   yolo      Agents can commit locally (but never push).
   lockdown  Use secure image (git binary removed).
 
-DOCKER_ARGS:
-  Arguments after -- are passed directly to 'docker run'.
-  Example: agentbox-docker -- --memory 16g --cpus 4
+SLURM_ARGS:
+  Arguments after -- are passed directly to 'srun'.
+  Common options:
+    --gpus N            Request N GPUs
+    --mem SIZE          Request memory (e.g., 32G)
+    --cpus-per-task N   Request N CPUs
+    --time HH:MM:SS     Time limit
+    --partition NAME    Slurm partition
 
 EXAMPLES:
   # Basic usage in current directory (patch mode)
-  agentbox-docker
+  sbox
 
-  # Yolo mode with explicit project
-  agentbox-docker --yolo -p ~/projects/myapp
+  # Yolo mode with named container (for reattachment)
+  sbox --yolo -p ~/projects/myapp -n mydev
 
-  # With extra tooling and GPUs
-  agentbox-docker -p ~/projects/myapp -t ~/scripts --gpus all
+  # With GPUs and memory via Slurm args
+  sbox -p ~/projects/myapp -- --gpus 4 --mem 64G
 
-  # Pass extra docker args
-  agentbox-docker -- --memory 32g --shm-size 16g
+  # Reattach to named container
+  sbox attach mydev
+
+REATTACHMENT:
+  To reattach to a running named container:
+    sbox attach NAME [-- SLURM_ARGS...]
 
 EOF
 }
@@ -83,12 +92,30 @@ EOF
 PROJ=""
 MODE=""
 IMAGE=""
-GPUS=""
+NAME=""
 CMD=""
+ATTACH_MODE=0
 declare -a EXTRA_TOOLS=()
-declare -a DOCKER_EXTRA_ARGS=()
+declare -a SLURM_EXTRA_ARGS=()
 
 parse_args() {
+    # Check for attach subcommand
+    if [[ "${1:-}" == "attach" ]]; then
+        ATTACH_MODE=1
+        shift
+        if [[ $# -lt 1 ]]; then
+            die_usage "attach requires a container name"
+        fi
+        NAME="$1"
+        shift
+        # Rest goes to slurm args (skip --)
+        if [[ "${1:-}" == "--" ]]; then
+            shift
+        fi
+        SLURM_EXTRA_ARGS=("$@")
+        return
+    fi
+
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -p|--proj)
@@ -115,12 +142,12 @@ parse_args() {
                 MODE="lockdown"
                 shift
                 ;;
-            --image)
-                IMAGE="$2"
+            -n|--name)
+                NAME="$2"
                 shift 2
                 ;;
-            --gpus)
-                GPUS="$2"
+            --image)
+                IMAGE="$2"
                 shift 2
                 ;;
             --cmd)
@@ -137,7 +164,7 @@ parse_args() {
                 ;;
             --)
                 shift
-                DOCKER_EXTRA_ARGS=("$@")
+                SLURM_EXTRA_ARGS=("$@")
                 break
                 ;;
             -*)
@@ -162,12 +189,20 @@ parse_args() {
 main() {
     parse_args "$@"
 
+    # Handle attach mode
+    if [[ $ATTACH_MODE -eq 1 ]]; then
+        slurm_validate
+        slurm_attach "$NAME" "${SLURM_EXTRA_ARGS[@]}"
+        exit 0
+    fi
+
     # Load user config
     load_config
 
     # Apply defaults
     PROJ="${PROJ:-$(pwd)}"
     MODE="${MODE:-${AGENTBOX_DEFAULT_MODE:-patch}}"
+    CMD="${CMD:-bash}"
 
     # Select image based on mode
     if [[ -z "$IMAGE" ]]; then
@@ -189,12 +224,15 @@ main() {
     PROJ="$(resolve_path "$PROJ")"
 
     # Validate
-    docker_validate
+    slurm_validate
     require_directory "$PROJ" "Project directory"
 
     log_info "Mode: $MODE"
     log_info "Project: $PROJ"
     log_info "Image: $IMAGE"
+    if [[ -n "$NAME" ]]; then
+        log_info "Container name: $NAME"
+    fi
 
     # Build mounts
     mounts_reset
@@ -223,21 +261,42 @@ main() {
         env_dump | while read -r line; do log_debug "  $line"; done
     fi
 
-    # Build docker extra args
-    declare -a docker_args=()
+    # Add default Slurm args from config if not overridden
+    declare -a slurm_args=()
 
-    # GPUs
-    if [[ -n "$GPUS" ]]; then
-        docker_args+=(--gpus "$GPUS")
-    elif [[ -n "${AGENTBOX_DOCKER_GPUS:-}" ]]; then
-        docker_args+=(--gpus "${AGENTBOX_DOCKER_GPUS}")
+    # Check if user provided these in SLURM_EXTRA_ARGS
+    has_arg() {
+        local needle="$1"
+        for arg in "${SLURM_EXTRA_ARGS[@]}"; do
+            if [[ "$arg" == "$needle"* ]]; then
+                return 0
+            fi
+        done
+        return 1
+    }
+
+    # Apply config defaults only if not specified
+    if [[ -n "${AGENTBOX_SLURM_PARTITION:-}" ]] && ! has_arg "--partition"; then
+        slurm_args+=(--partition "${AGENTBOX_SLURM_PARTITION}")
     fi
 
-    # User-provided extra args
-    docker_args+=("${DOCKER_EXTRA_ARGS[@]}")
+    if [[ -n "${AGENTBOX_SLURM_GPUS:-}" ]] && ! has_arg "--gpus"; then
+        slurm_args+=(--gpus "${AGENTBOX_SLURM_GPUS}")
+    fi
+
+    if [[ -n "${AGENTBOX_SLURM_MEM:-}" ]] && ! has_arg "--mem"; then
+        slurm_args+=(--mem "${AGENTBOX_SLURM_MEM}")
+    fi
+
+    if [[ -n "${AGENTBOX_SLURM_TIME:-}" ]] && ! has_arg "--time"; then
+        slurm_args+=(--time "${AGENTBOX_SLURM_TIME}")
+    fi
+
+    # Add user-provided args
+    slurm_args+=("${SLURM_EXTRA_ARGS[@]}")
 
     # Execute
-    docker_run "$IMAGE" "$PROJ" "$CMD" "${docker_args[@]}"
+    slurm_run "$IMAGE" "$PROJ" "$NAME" "$CMD" "${slurm_args[@]}"
 }
 
 main "$@"

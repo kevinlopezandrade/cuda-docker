@@ -44,7 +44,7 @@ AGENTBOX_IMAGE_SECURE="cuda-dev:secure"
 AGENTBOX_DEFAULT_MODE="patch"
 
 #######################################
-# Slurm defaults (agentbox-slurm)
+# Slurm defaults (sbox)
 #######################################
 # Default Slurm partition
 # AGENTBOX_SLURM_PARTITION="gpu"
@@ -59,7 +59,7 @@ AGENTBOX_DEFAULT_MODE="patch"
 # AGENTBOX_SLURM_TIME="4:00:00"
 
 #######################################
-# Docker defaults (agentbox-docker)
+# Docker defaults (box)
 #######################################
 # Default GPU request (requires nvidia-docker)
 # AGENTBOX_DOCKER_GPUS="all"

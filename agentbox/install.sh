@@ -153,11 +153,11 @@ main() {
     # Install launchers
     log_info "Installing launchers..."
     if [[ $USE_LINKS -eq 1 ]]; then
-        ln -sf "${SCRIPT_DIR}/launchers/agentbox-docker" "${INSTALL_DIR}/launchers/agentbox-docker"
-        ln -sf "${SCRIPT_DIR}/launchers/agentbox-slurm" "${INSTALL_DIR}/launchers/agentbox-slurm"
+        ln -sf "${SCRIPT_DIR}/launchers/box" "${INSTALL_DIR}/launchers/box"
+        ln -sf "${SCRIPT_DIR}/launchers/sbox" "${INSTALL_DIR}/launchers/sbox"
     else
-        cp "${SCRIPT_DIR}/launchers/agentbox-docker" "${INSTALL_DIR}/launchers/"
-        cp "${SCRIPT_DIR}/launchers/agentbox-slurm" "${INSTALL_DIR}/launchers/"
+        cp "${SCRIPT_DIR}/launchers/box" "${INSTALL_DIR}/launchers/"
+        cp "${SCRIPT_DIR}/launchers/sbox" "${INSTALL_DIR}/launchers/"
         chmod +x "${INSTALL_DIR}/launchers/"*
     fi
     log_success "Launchers installed"
@@ -194,9 +194,9 @@ main() {
     echo ""
     echo "3. Usage:"
     echo ""
-    echo "   ${BLUE}agentbox-docker -p ~/project${RESET}        # Docker"
-    echo "   ${BLUE}agentbox-slurm -p ~/project${RESET}         # Slurm"
-    echo "   ${BLUE}agentbox-slurm --yolo -p ~/project${RESET}  # Allow commits"
+    echo "   ${BLUE}box -p ~/project${RESET}        # Docker"
+    echo "   ${BLUE}sbox -p ~/project${RESET}       # Slurm"
+    echo "   ${BLUE}sbox --yolo -p ~/project${RESET}  # Allow commits"
     echo ""
 }
 

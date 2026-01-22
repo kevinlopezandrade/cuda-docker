@@ -36,8 +36,8 @@ When running AI coding agents (Claude Code, Codex, etc.) in containers, several 
 │   ├── docker.sh        # Docker-specific functions
 │   └── slurm.sh         # Slurm/Pyxis-specific functions
 ├── launchers/
-│   ├── agentbox-docker  # Docker launcher
-│   └── agentbox-slurm   # Slurm launcher
+│   ├── box              # Docker launcher
+│   └── sbox             # Slurm launcher
 ├── config.sh            # User configuration
 └── install.sh           # Installation script
 
@@ -88,35 +88,35 @@ AGENTBOX_DEFAULT_MODE="patch"
 
 ```bash
 # Basic (patch mode, current directory)
-agentbox-docker
+box
 
 # Explicit project path
-agentbox-docker -p ~/projects/myapp
+box -p ~/projects/myapp
 
 # Yolo mode (agents can commit)
-agentbox-docker --yolo -p ~/projects/myapp
+box --yolo -p ~/projects/myapp
 
 # With GPUs
-agentbox-docker -p ~/projects/myapp --gpus all
+box -p ~/projects/myapp --gpus all
 
 # Pass extra docker args after --
-agentbox-docker -p ~/projects/myapp -- --memory 32g --shm-size 16g
+box -p ~/projects/myapp -- --memory 32g --shm-size 16g
 ```
 
 ### Slurm
 
 ```bash
 # Basic
-agentbox-slurm -p ~/projects/myapp
+sbox -p ~/projects/myapp
 
 # With resources (pass Slurm args after --)
-agentbox-slurm -p ~/projects/myapp -- --gpus 4 --mem 64G --time 4:00:00
+sbox -p ~/projects/myapp -- --gpus 4 --mem 64G --time 4:00:00
 
 # Named container for reattachment
-agentbox-slurm -n mydev -p ~/projects/myapp -- --gpus 4
+sbox -n mydev -p ~/projects/myapp -- --gpus 4
 
 # Reattach later
-agentbox-slurm attach mydev
+sbox attach mydev
 ```
 
 ### Inside the Container
@@ -250,7 +250,7 @@ AGENT_ALLOW_COMMIT=0|1       # Controls git wrapper behavior
 
 ```bash
 # 1. Launch container
-agentbox-docker -p ~/projects/myapp
+box -p ~/projects/myapp
 
 # 2. Inside container: install your tools (home is writable!)
 ~/scripts/setup.sh
@@ -283,7 +283,7 @@ In Pyxis/Slurm mode, the container doesn't start as root, so it may not be able 
 ### Git commands fail silently
 Run with `--debug` to see what's happening:
 ```bash
-AGENTBOX_DEBUG=1 agentbox-docker -p ~/project
+AGENTBOX_DEBUG=1 box -p ~/project
 ```
 
 ### Tooling repo not found
