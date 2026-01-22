@@ -225,3 +225,84 @@ join_by() {
     printf '%s' "$first"
     printf '%s' "${@/#/$delimiter}"
 }
+
+#######################################
+# Worktree utilities
+#######################################
+
+# Generate a short unique ID (4 hex chars based on timestamp + random)
+# Outputs:
+#   Short hex ID (e.g., "a3f2")
+generate_short_id() {
+    printf '%04x' $(( ($(date +%s) + RANDOM) % 65536 ))
+}
+
+# Create a git worktree for agent work
+# Arguments:
+#   $1 - Source git repo path
+#   $2 - Branch name (optional, auto-generated if empty)
+# Outputs:
+#   Path to the created worktree
+# Globals:
+#   Sets AGENTBOX_WORKTREE_PATH and AGENTBOX_WORKTREE_BRANCH
+create_agent_worktree() {
+    local repo_path="$1"
+    local branch="${2:-}"
+
+    # Generate short ID for naming
+    local short_id
+    short_id="$(generate_short_id)"
+
+    # Generate branch name if not provided
+    if [[ -z "$branch" ]]; then
+        branch="agent/${short_id}"
+    fi
+
+    # Generate worktree path (adjacent to repo)
+    local repo_name
+    repo_name="$(basename "$repo_path")"
+    local repo_parent
+    repo_parent="$(dirname "$repo_path")"
+
+    # Use branch name suffix if provided, otherwise use short_id
+    local wt_suffix
+    if [[ "$branch" == "agent/${short_id}" ]]; then
+        wt_suffix="$short_id"
+    else
+        # Use last component of branch name
+        wt_suffix="${branch##*/}"
+    fi
+
+    local worktree_path="${repo_parent}/${repo_name}-wt-${wt_suffix}"
+
+    # Check if worktree path already exists
+    if [[ -e "$worktree_path" ]]; then
+        die 1 "Worktree path already exists: $worktree_path"
+    fi
+
+    # Check if branch exists
+    local branch_exists=0
+    if git -C "$repo_path" show-ref --verify --quiet "refs/heads/${branch}" 2>/dev/null; then
+        branch_exists=1
+    fi
+
+    log_info "Creating worktree at: $worktree_path"
+    log_info "Branch: $branch"
+
+    # Create worktree
+    if [[ $branch_exists -eq 1 ]]; then
+        # Branch exists, use it
+        git -C "$repo_path" worktree add "$worktree_path" "$branch" || \
+            die 1 "Failed to create worktree"
+    else
+        # Create new branch from current HEAD
+        git -C "$repo_path" worktree add -b "$branch" "$worktree_path" || \
+            die 1 "Failed to create worktree with new branch"
+    fi
+
+    log_success "Worktree created"
+
+    # Set globals for caller
+    AGENTBOX_WORKTREE_PATH="$worktree_path"
+    AGENTBOX_WORKTREE_BRANCH="$branch"
+}

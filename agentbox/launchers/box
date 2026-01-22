@@ -44,6 +44,8 @@ Launch an agentbox container using Docker.
 
 OPTIONS:
   -p, --proj PATH       Project directory (default: current directory)
+  -w, --worktree        Create a git worktree for parallel development
+      --branch NAME     Branch name for worktree (default: agent/<id>)
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
   -m, --mode MODE       Agent mode: patch, yolo, lockdown (default: patch)
       --image IMAGE     Container image (overrides config default)
@@ -74,6 +76,13 @@ EXAMPLES:
   # Pass extra docker args
   box -- --memory 32g --shm-size 16g
 
+  # Create worktree for parallel agent work
+  box -w -p ~/projects/myapp
+  # Creates ~/projects/myapp-wt-<id> on branch agent/<id>
+
+  # Worktree with specific branch
+  box -w --branch feature/auth -p ~/projects/myapp
+
 EOF
 }
 
@@ -85,6 +94,8 @@ MODE=""
 IMAGE=""
 GPUS=""
 CMD=""
+USE_WORKTREE=0
+BRANCH=""
 declare -a EXTRA_TOOLS=()
 declare -a DOCKER_EXTRA_ARGS=()
 
@@ -114,6 +125,14 @@ parse_args() {
             --lockdown)
                 MODE="lockdown"
                 shift
+                ;;
+            -w|--worktree)
+                USE_WORKTREE=1
+                shift
+                ;;
+            --branch)
+                BRANCH="$2"
+                shift 2
                 ;;
             --image)
                 IMAGE="$2"
@@ -192,6 +211,21 @@ main() {
     docker_validate
     require_directory "$PROJ" "Project directory"
 
+    # Handle worktree creation
+    if [[ $USE_WORKTREE -eq 1 ]]; then
+        require_git_repo "$PROJ" "Project directory"
+        create_agent_worktree "$PROJ" "$BRANCH"
+        PROJ="$AGENTBOX_WORKTREE_PATH"
+        log_info "Using worktree: $PROJ"
+        log_info "Branch: $AGENTBOX_WORKTREE_BRANCH"
+        echo ""
+        log_info "After container exits, review changes with:"
+        log_info "  cd $PROJ && git diff main"
+        log_info "Cleanup with:"
+        log_info "  git worktree remove $PROJ"
+        echo ""
+    fi
+
     log_info "Mode: $MODE"
     log_info "Project: $PROJ"
     log_info "Image: $IMAGE"
@@ -208,6 +242,9 @@ main() {
 
     # Mount /etc/passwd and /etc/group for UID/GID resolution
     mount_user_identity
+
+    # Mount agent config directories
+    mount_codex_config
 
     log_debug "Mounts ($(mounts_count)):"
     if [[ "${AGENTBOX_DEBUG:-0}" == "1" ]]; then

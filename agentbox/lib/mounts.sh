@@ -91,7 +91,9 @@ mount_project() {
     mount_mirror "$proj" "rw"
 
     # Handle .git based on mode
+    # Note: Regular repos have .git as directory, worktrees have .git as file
     if [[ -d "${proj}/.git" ]]; then
+        # Regular git repo - .git is a directory
         case "$mode" in
             patch|lockdown)
                 # Read-only .git prevents commits
@@ -106,8 +108,40 @@ mount_project() {
                 die 1 "Unknown mode: $mode"
                 ;;
         esac
+    elif [[ -f "${proj}/.git" ]]; then
+        # Git worktree - .git is a file pointing to main repo
+        # Parse the .git file to find the main repo's .git directory
+        local gitdir_line
+        gitdir_line="$(head -1 "${proj}/.git")"
+
+        if [[ "$gitdir_line" =~ ^gitdir:\ (.+)$ ]]; then
+            local gitdir="${BASH_REMATCH[1]}"
+            # gitdir is something like /home/kev/pylance/.git/worktrees/name
+            # We need the main .git directory: /home/kev/pylance/.git
+            local main_gitdir="${gitdir%/worktrees/*}"
+
+            if [[ -d "$main_gitdir" ]]; then
+                case "$mode" in
+                    patch|lockdown)
+                        mount_mirror "$main_gitdir" "ro"
+                        log_info "Worktree: main .git mounted read-only (mode: $mode)"
+                        ;;
+                    yolo)
+                        mount_mirror "$main_gitdir" "rw"
+                        log_info "Worktree: main .git mounted read-write (mode: yolo)"
+                        ;;
+                    *)
+                        die 1 "Unknown mode: $mode"
+                        ;;
+                esac
+            else
+                log_warn "Could not find main repo .git directory: $main_gitdir"
+            fi
+        else
+            log_warn "Could not parse worktree .git file: ${proj}/.git"
+        fi
     else
-        log_warn "Project has no .git directory: $proj"
+        log_warn "Project has no .git: $proj"
     fi
 }
 
@@ -173,6 +207,17 @@ mount_policy_bin() {
 
     mount_add_ro "$policy_bin" "/opt/agentbox/bin"
     log_debug "Policy bin mounted at /opt/agentbox/bin"
+}
+
+# Mount codex config directory
+# Globals:
+#   AGENTBOX_MOUNTS
+mount_codex_config() {
+    local codex_dir="$HOME/.codex"
+    if [[ -d "$codex_dir" ]]; then
+        mount_mirror "$codex_dir" "rw"
+        log_debug "Mounted ~/.codex for codex config"
+    fi
 }
 
 # Mount /etc/passwd and /etc/group for UID/GID resolution

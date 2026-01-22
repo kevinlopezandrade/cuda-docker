@@ -24,6 +24,7 @@ When running AI coding agents (Claude Code, Codex, etc.) in containers, several 
 - **Entrypoint pattern**: Creates writable home directory, drops privileges correctly
 - **UID/GID resolution**: Mounts `/etc/passwd` and `/etc/group`
 - **Three modes**: `patch` (no commit), `yolo` (commit allowed), `lockdown` (no git)
+- **Worktree support**: Run agents in parallel on the same repo without branch conflicts
 
 ## Directory Structure
 
@@ -117,6 +118,40 @@ sbox -n mydev -p ~/projects/myapp -- --gpus 4
 
 # Reattach later
 sbox attach mydev
+```
+
+### Worktrees (Parallel Development)
+
+When you want to work on something while an agent works in parallel on the same repo, use worktrees. This creates a separate working directory linked to the same git repository.
+
+```bash
+# Create worktree with auto-generated branch (agent/<id>)
+box -w -p ~/projects/myapp
+# Creates: ~/projects/myapp-wt-a3f2 on branch agent/a3f2
+
+# Specify branch name
+box -w --branch feature/auth -p ~/projects/myapp
+# Creates: ~/projects/myapp-wt-auth on branch feature/auth
+
+# With Slurm
+sbox -w -p ~/projects/myapp -- --gpus 1
+```
+
+After the agent finishes:
+
+```bash
+# Review changes in the worktree
+cd ~/projects/myapp-wt-a3f2
+git diff main
+git log main..HEAD
+
+# Merge into main
+cd ~/projects/myapp
+git merge agent/a3f2  # or cherry-pick specific commits
+
+# Cleanup
+git worktree remove ~/projects/myapp-wt-a3f2
+git branch -d agent/a3f2
 ```
 
 ### Inside the Container
