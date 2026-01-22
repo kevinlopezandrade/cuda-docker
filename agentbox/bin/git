@@ -2,8 +2,9 @@
 # agentbox/bin/git - Git policy wrapper
 #
 # This wrapper intercepts git commands and enforces agentbox policies:
-# - Network operations (push, fetch, pull, clone) are ALWAYS forbidden
+# - Push is ALWAYS forbidden (prevents data exfiltration)
 # - Write operations (commit, merge, etc.) depend on AGENT_ALLOW_COMMIT
+# - Read/fetch operations (clone, pull, fetch) are allowed
 #
 # Place this in PATH before /usr/bin/git to intercept git calls.
 # shellcheck shell=bash
@@ -65,28 +66,10 @@ SUBCMD="$(get_subcommand "$@")"
 
 # Policy enforcement
 case "$SUBCMD" in
-    # Network operations: ALWAYS forbidden
+    # Push: ALWAYS forbidden (prevents data exfiltration)
     push)
         echo "AGENTBOX POLICY: 'git push' is forbidden in this container." >&2
         echo "                 Agents cannot push to remote repositories." >&2
-        exit 2
-        ;;
-
-    fetch)
-        echo "AGENTBOX POLICY: 'git fetch' is forbidden in this container." >&2
-        echo "                 Use the host to sync with remotes." >&2
-        exit 2
-        ;;
-
-    pull)
-        echo "AGENTBOX POLICY: 'git pull' is forbidden in this container." >&2
-        echo "                 Use the host to sync with remotes." >&2
-        exit 2
-        ;;
-
-    clone)
-        echo "AGENTBOX POLICY: 'git clone' is forbidden in this container." >&2
-        echo "                 Clone repositories on the host and mount them." >&2
         exit 2
         ;;
 

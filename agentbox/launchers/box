@@ -14,23 +14,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Support both installed (~/.agentbox) and development (repo) layouts
 if [[ -f "${SCRIPT_DIR}/../lib/core.sh" ]]; then
-    # Development/repo layout
     AGENTBOX_LIB="${SCRIPT_DIR}/../lib"
-    AGENTBOX_DIR="${SCRIPT_DIR}/.."
 else
-    # Installed layout
     AGENTBOX_LIB="${HOME}/.agentbox/lib"
-    AGENTBOX_DIR="${HOME}/.agentbox"
 fi
 
 # Source libraries
-# shellcheck source=../lib/core.sh
 source "${AGENTBOX_LIB}/core.sh"
-# shellcheck source=../lib/mounts.sh
 source "${AGENTBOX_LIB}/mounts.sh"
-# shellcheck source=../lib/env.sh
 source "${AGENTBOX_LIB}/env.sh"
-# shellcheck source=../lib/docker.sh
+source "${AGENTBOX_LIB}/launcher.sh"
 source "${AGENTBOX_LIB}/docker.sh"
 
 #######################################
@@ -64,114 +57,57 @@ DOCKER_ARGS:
   Example: box -- --memory 16g --cpus 4
 
 EXAMPLES:
-  # Basic usage in current directory (patch mode)
-  box
-
-  # Yolo mode with explicit project
-  box --yolo -p ~/projects/myapp
-
-  # With extra tooling and GPUs
-  box -p ~/projects/myapp -t ~/scripts --gpus all
-
-  # Pass extra docker args
-  box -- --memory 32g --shm-size 16g
-
-  # Create worktree for parallel agent work
-  box -w -p ~/projects/myapp
-  # Creates ~/projects/myapp-wt-<id> on branch agent/<id>
-
-  # Worktree with specific branch
-  box -w --branch feature/auth -p ~/projects/myapp
+  box                                    # Current directory, patch mode
+  box --yolo -p ~/projects/myapp         # Yolo mode
+  box -p ~/projects/myapp --gpus all     # With GPUs
+  box -- --memory 32g --shm-size 16g     # Extra docker args
+  box -w -p ~/projects/myapp             # Create worktree
+  box -w --branch feature/auth -p ~/proj # Worktree with branch
 
 EOF
 }
 
 #######################################
+# Docker-specific variables
+#######################################
+GPUS=""
+
+#######################################
 # Parse arguments
 #######################################
-PROJ=""
-MODE=""
-IMAGE=""
-GPUS=""
-CMD=""
-USE_WORKTREE=0
-BRANCH=""
-declare -a EXTRA_TOOLS=()
-declare -a DOCKER_EXTRA_ARGS=()
-
 parse_args() {
+    # First pass: extract docker-specific args
+    local -a args_for_common=()
+
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -p|--proj)
-                PROJ="$2"
-                shift 2
-                ;;
-            -t|--tools)
-                EXTRA_TOOLS+=("$2")
-                shift 2
-                ;;
-            -m|--mode)
-                MODE="$2"
-                shift 2
-                ;;
-            --patch)
-                MODE="patch"
-                shift
-                ;;
-            --yolo)
-                MODE="yolo"
-                shift
-                ;;
-            --lockdown)
-                MODE="lockdown"
-                shift
-                ;;
-            -w|--worktree)
-                USE_WORKTREE=1
-                shift
-                ;;
-            --branch)
-                BRANCH="$2"
-                shift 2
-                ;;
-            --image)
-                IMAGE="$2"
-                shift 2
-                ;;
             --gpus)
                 GPUS="$2"
                 shift 2
-                ;;
-            --cmd)
-                CMD="$2"
-                shift 2
-                ;;
-            --debug)
-                export AGENTBOX_DEBUG=1
-                shift
                 ;;
             -h|--help)
                 usage
                 exit 0
                 ;;
-            --)
-                shift
-                DOCKER_EXTRA_ARGS=("$@")
-                break
-                ;;
-            -*)
-                die_usage "Unknown option: $1"
-                ;;
             *)
-                # Positional argument - treat as project if not set
-                if [[ -z "$PROJ" ]]; then
-                    PROJ="$1"
-                else
-                    die_usage "Unexpected argument: $1"
-                fi
+                args_for_common+=("$1")
                 shift
                 ;;
         esac
+    done
+
+    # Parse common args
+    parse_common_args "${args_for_common[@]}"
+
+    # Handle remaining args (positional project path)
+    for arg in "${LAUNCHER_REMAINING_ARGS[@]}"; do
+        if [[ "$arg" == -* ]]; then
+            die_usage "Unknown option: $arg"
+        elif [[ -z "$PROJ" ]]; then
+            PROJ="$arg"
+        else
+            die_usage "Unexpected argument: $arg"
+        fi
     done
 }
 
@@ -181,86 +117,19 @@ parse_args() {
 main() {
     parse_args "$@"
 
-    # Load user config
-    load_config
+    # Common setup (config, defaults, image selection)
+    launcher_setup
 
-    # Apply defaults
-    PROJ="${PROJ:-$(pwd)}"
-    MODE="${MODE:-${AGENTBOX_DEFAULT_MODE:-patch}}"
-
-    # Select image based on mode
-    if [[ -z "$IMAGE" ]]; then
-        case "$MODE" in
-            lockdown)
-                IMAGE="${AGENTBOX_IMAGE_SECURE:-}"
-                ;;
-            *)
-                IMAGE="${AGENTBOX_IMAGE_STANDARD:-}"
-                ;;
-        esac
-    fi
-
-    if [[ -z "$IMAGE" ]]; then
-        die 1 "No image specified and no default configured. Use --image or set AGENTBOX_IMAGE_STANDARD in config."
-    fi
-
-    # Resolve project path
-    PROJ="$(resolve_path "$PROJ")"
-
-    # Validate
+    # Docker-specific validation
     docker_validate
-    require_directory "$PROJ" "Project directory"
 
-    # Handle worktree creation
-    if [[ $USE_WORKTREE -eq 1 ]]; then
-        require_git_repo "$PROJ" "Project directory"
-        create_agent_worktree "$PROJ" "$BRANCH"
-        PROJ="$AGENTBOX_WORKTREE_PATH"
-        log_info "Using worktree: $PROJ"
-        log_info "Branch: $AGENTBOX_WORKTREE_BRANCH"
-        echo ""
-        log_info "After container exits, review changes with:"
-        log_info "  cd $PROJ && git diff main"
-        log_info "Cleanup with:"
-        log_info "  git worktree remove $PROJ"
-        echo ""
-    fi
+    # Common preparation (worktree, logging)
+    launcher_prepare
 
-    log_info "Mode: $MODE"
-    log_info "Project: $PROJ"
-    log_info "Image: $IMAGE"
+    # Build mounts and environment
+    launcher_build
 
-    # Build mounts
-    mounts_reset
-    mount_project "$PROJ" "$MODE"
-    mount_all_tooling
-
-    # Mount extra tools specified on command line
-    for tool in "${EXTRA_TOOLS[@]}"; do
-        mount_tooling "$tool"
-    done
-
-    # Mount /etc/passwd and /etc/group for UID/GID resolution
-    mount_user_identity
-
-    # Mount agent config directories
-    mount_codex_config
-
-    log_debug "Mounts ($(mounts_count)):"
-    if [[ "${AGENTBOX_DEBUG:-0}" == "1" ]]; then
-        mounts_dump | while read -r line; do log_debug "  $line"; done
-    fi
-
-    # Build environment
-    env_reset
-    env_setup_all "$MODE"
-
-    log_debug "Environment:"
-    if [[ "${AGENTBOX_DEBUG:-0}" == "1" ]]; then
-        env_dump | while read -r line; do log_debug "  $line"; done
-    fi
-
-    # Build docker extra args
+    # Build docker args
     declare -a docker_args=()
 
     # GPUs
@@ -271,7 +140,7 @@ main() {
     fi
 
     # User-provided extra args
-    docker_args+=("${DOCKER_EXTRA_ARGS[@]}")
+    docker_args+=("${BACKEND_EXTRA_ARGS[@]}")
 
     # Execute
     docker_run "$IMAGE" "$PROJ" "$CMD" "${docker_args[@]}"

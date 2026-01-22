@@ -178,18 +178,18 @@ The git wrapper is **baked into the Docker image** at `/usr/local/bin/git`, taki
 
 **Always blocked:**
 - `git push` — "AGENTBOX POLICY: 'git push' is forbidden in this container."
-- `git fetch` — "AGENTBOX POLICY: 'git fetch' is forbidden in this container."
-- `git pull` — "AGENTBOX POLICY: 'git pull' is forbidden in this container."
-- `git clone` — "AGENTBOX POLICY: 'git clone' is forbidden in this container."
 
 **Blocked in patch/lockdown mode:**
 - `git commit` — "AGENTBOX POLICY: 'git commit' is disabled in this container."
 - `git merge`, `git rebase`, `git cherry-pick`, `git reset`, `git stash`, `git tag`
 
 **Always allowed:**
+- `git clone`, `git fetch`, `git pull` — inbound operations are safe
 - `git status`, `git diff`, `git log`, `git show`, `git blame`, etc.
 
-Additionally, `GIT_ALLOW_PROTOCOL=file` is set, preventing network protocols at the git level.
+**Protocol restrictions:** `GIT_ALLOW_PROTOCOL=file:https` (ssh disabled to prevent key-based auth).
+
+**Credential protection:** The launcher validates that no paths containing `~/.ssh` or `.git-credentials` are mounted, preventing accidental credential exposure.
 
 ## Docker Image
 
@@ -265,21 +265,22 @@ $PROJ/.git:$PROJ/.git:ro  # (in patch/lockdown mode)
 ```bash
 HOST_UID=1000                # Your UID (for entrypoint)
 HOST_GID=1000                # Your GID (for entrypoint)
-GIT_ALLOW_PROTOCOL=file      # Block network git protocols
-GIT_TERMINAL_PROMPT=0        # No interactive prompts
-GIT_CONFIG_GLOBAL=/dev/null  # Ignore global git config
-AGENT_ALLOW_COMMIT=0|1       # Controls git wrapper behavior
+GIT_ALLOW_PROTOCOL=file:https  # Allow https, block ssh
+GIT_TERMINAL_PROMPT=0          # No interactive prompts
+GIT_CONFIG_GLOBAL=/dev/null    # Ignore global git config
+AGENT_ALLOW_COMMIT=0|1         # Controls git wrapper behavior
 ```
 
 ## Security Model
 
 1. **Privilege dropping**: Container starts as root, drops to your user via `gosu`
 2. **Writable home**: Created at runtime with correct ownership
-3. **No credentials mounted**: `$HOME` not auto-mounted (Slurm cluster config)
-4. **Git network ops blocked**: Wrapper + `GIT_ALLOW_PROTOCOL=file`
-5. **Commits controlled by mode**: `.git:ro` + wrapper
-6. **Tooling protected**: `.git:ro` on all tooling repos
-7. **Clear error messages**: Agents don't waste tokens on permission errors
+3. **No credentials mounted**: Launcher blocks paths containing `~/.ssh` or `.git-credentials`
+4. **Push blocked**: Git wrapper blocks `git push` (the only data exfiltration risk)
+5. **No SSH auth**: `SSH_AUTH_SOCK` unset, ssh protocol disabled
+6. **Commits controlled by mode**: `.git:ro` + wrapper
+7. **Tooling protected**: `.git:ro` on all tooling repos
+8. **Clear error messages**: Agents don't waste tokens on permission errors
 
 ## Typical Workflow
 
@@ -293,9 +294,9 @@ box -p ~/projects/myapp
 # 3. Run your agent
 claude
 
-# 4. Agent works on code, can git diff/status, but cannot:
+# 4. Agent works on code, can git diff/status/clone/pull, but cannot:
 #    - Commit (patch mode)
-#    - Push/fetch/pull (ever)
+#    - Push (ever)
 #    - Modify your ~/scripts repo's git history
 
 # 5. Exit container, review changes on host

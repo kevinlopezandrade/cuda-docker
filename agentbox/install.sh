@@ -132,7 +132,7 @@ main() {
     # Install libraries
     log_info "Installing libraries..."
     if [[ $USE_LINKS -eq 1 ]]; then
-        for lib in core.sh mounts.sh env.sh docker.sh slurm.sh; do
+        for lib in core.sh mounts.sh env.sh launcher.sh docker.sh slurm.sh; do
             ln -sf "${SCRIPT_DIR}/lib/${lib}" "${INSTALL_DIR}/lib/${lib}"
         done
     else

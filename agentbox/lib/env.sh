@@ -52,13 +52,12 @@ env_unset() {
 # Policy environment setup
 #######################################
 
-# Set up git lockdown environment variables
-# These prevent git from using network protocols
+# Set up git environment variables
 # Globals:
 #   AGENTBOX_ENV
 env_git_lockdown() {
-    # Only allow file:// protocol (local repos)
-    env_set "GIT_ALLOW_PROTOCOL" "file"
+    # Allow file and https protocols (no ssh - requires keys)
+    env_set "GIT_ALLOW_PROTOCOL" "file:https"
 
     # Disable interactive prompts
     env_set "GIT_TERMINAL_PROMPT" "0"
@@ -72,7 +71,7 @@ env_git_lockdown() {
     # Remove SSH agent socket (no ssh-based auth)
     env_unset "SSH_AUTH_SOCK"
 
-    log_debug "Git lockdown environment configured"
+    log_debug "Git environment configured"
 }
 
 # Set up agent mode environment
