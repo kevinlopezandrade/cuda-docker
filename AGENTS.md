@@ -127,11 +127,11 @@ When you want to work on something while an agent works in parallel on the same 
 ```bash
 # Create worktree with auto-generated branch (agent/<id>)
 box -w -p ~/projects/myapp
-# Creates: ~/projects/myapp-wt-a3f2 on branch agent/a3f2
+# Creates: ~/projects/myapp-agents/wt-a3f2 on branch agent/a3f2
 
 # Specify branch name
 box -w --branch feature/auth -p ~/projects/myapp
-# Creates: ~/projects/myapp-wt-auth on branch feature/auth
+# Creates: ~/projects/myapp-agents/wt-auth on branch feature/auth
 
 # With Slurm
 sbox -w -p ~/projects/myapp -- --gpus 1
@@ -141,7 +141,7 @@ After the agent finishes:
 
 ```bash
 # Review changes in the worktree
-cd ~/projects/myapp-wt-a3f2
+cd ~/projects/myapp-agents/wt-a3f2
 git diff main
 git log main..HEAD
 
@@ -150,7 +150,7 @@ cd ~/projects/myapp
 git merge agent/a3f2  # or cherry-pick specific commits
 
 # Cleanup
-git worktree remove ~/projects/myapp-wt-a3f2
+git worktree remove ~/projects/myapp-agents/wt-a3f2
 git branch -d agent/a3f2
 ```
 

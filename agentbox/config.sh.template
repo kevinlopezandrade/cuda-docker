@@ -87,6 +87,3 @@ AGENTBOX_DEFAULT_MODE="patch"
 #######################################
 # Enable debug logging
 # AGENTBOX_DEBUG=1
-
-# Custom policy bin location (default: ~/.agentbox/bin)
-# AGENTBOX_POLICY_BIN="$HOME/.agentbox/bin"

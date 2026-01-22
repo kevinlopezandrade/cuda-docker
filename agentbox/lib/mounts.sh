@@ -288,27 +288,6 @@ mount_all_volumes() {
     done
 }
 
-# Add policy bin mount
-# Globals:
-#   AGENTBOX_POLICY_BIN
-#   AGENTBOX_MOUNTS
-mount_policy_bin() {
-    local policy_bin="${AGENTBOX_POLICY_BIN}"
-
-    if [[ ! -d "$policy_bin" ]]; then
-        log_warn "Policy bin directory not found: $policy_bin"
-        log_warn "Git wrapper will not be available."
-        return 0
-    fi
-
-    if [[ ! -x "${policy_bin}/git" ]]; then
-        log_warn "Git wrapper not found or not executable: ${policy_bin}/git"
-    fi
-
-    mount_add_ro "$policy_bin" "/opt/agentbox/bin"
-    log_debug "Policy bin mounted at /opt/agentbox/bin"
-}
-
 # Mount codex config directory
 # Globals:
 #   AGENTBOX_MOUNTS

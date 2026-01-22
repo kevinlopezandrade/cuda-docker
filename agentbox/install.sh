@@ -63,10 +63,11 @@ Install agentbox to ~/.agentbox
 
 OPTIONS:
   --prefix PATH     Install to PATH instead of ~/.agentbox
-  --link            Create symlinks instead of copying (for development)
   --force           Overwrite existing installation
   --no-config       Don't create config.sh (preserve existing)
   -h, --help        Show this help
+
+Uses symlinks so changes to source are immediately reflected.
 
 After installation, add to your shell rc file:
   export PATH="\$HOME/.agentbox/launchers:\$PATH"
@@ -77,7 +78,6 @@ EOF
 #######################################
 # Parse arguments
 #######################################
-USE_LINKS=0
 FORCE=0
 SKIP_CONFIG=0
 
@@ -86,10 +86,6 @@ while [[ $# -gt 0 ]]; do
         --prefix)
             INSTALL_DIR="$2"
             shift 2
-            ;;
-        --link)
-            USE_LINKS=1
-            shift
             ;;
         --force)
             FORCE=1
@@ -127,40 +123,20 @@ main() {
 
     # Create directory structure
     log_info "Creating directories..."
-    mkdir -p "$INSTALL_DIR"/{bin,lib,launchers}
+    mkdir -p "$INSTALL_DIR"/{lib,launchers}
 
-    # Install libraries
-    log_info "Installing libraries..."
-    if [[ $USE_LINKS -eq 1 ]]; then
-        for lib in core.sh mounts.sh env.sh launcher.sh docker.sh slurm.sh; do
-            ln -sf "${SCRIPT_DIR}/lib/${lib}" "${INSTALL_DIR}/lib/${lib}"
-        done
-    else
-        cp "${SCRIPT_DIR}"/lib/*.sh "${INSTALL_DIR}/lib/"
-    fi
-    log_success "Libraries installed"
+    # Install libraries (symlinks)
+    log_info "Symlinking libraries..."
+    for lib in core.sh mounts.sh env.sh launcher.sh docker.sh slurm.sh; do
+        ln -sf "${SCRIPT_DIR}/lib/${lib}" "${INSTALL_DIR}/lib/${lib}"
+    done
+    log_success "Libraries linked"
 
-    # Install bin (git wrapper)
-    log_info "Installing git wrapper..."
-    if [[ $USE_LINKS -eq 1 ]]; then
-        ln -sf "${SCRIPT_DIR}/bin/git" "${INSTALL_DIR}/bin/git"
-    else
-        cp "${SCRIPT_DIR}/bin/git" "${INSTALL_DIR}/bin/git"
-        chmod +x "${INSTALL_DIR}/bin/git"
-    fi
-    log_success "Git wrapper installed"
-
-    # Install launchers
-    log_info "Installing launchers..."
-    if [[ $USE_LINKS -eq 1 ]]; then
-        ln -sf "${SCRIPT_DIR}/launchers/box" "${INSTALL_DIR}/launchers/box"
-        ln -sf "${SCRIPT_DIR}/launchers/sbox" "${INSTALL_DIR}/launchers/sbox"
-    else
-        cp "${SCRIPT_DIR}/launchers/box" "${INSTALL_DIR}/launchers/"
-        cp "${SCRIPT_DIR}/launchers/sbox" "${INSTALL_DIR}/launchers/"
-        chmod +x "${INSTALL_DIR}/launchers/"*
-    fi
-    log_success "Launchers installed"
+    # Install launchers (symlinks)
+    log_info "Symlinking launchers..."
+    ln -sf "${SCRIPT_DIR}/launchers/box" "${INSTALL_DIR}/launchers/box"
+    ln -sf "${SCRIPT_DIR}/launchers/sbox" "${INSTALL_DIR}/launchers/sbox"
+    log_success "Launchers linked"
 
     # Install config template
     if [[ $SKIP_CONFIG -eq 0 ]]; then

@@ -12,7 +12,6 @@ set -euo pipefail
 readonly AGENTBOX_VERSION="1.0.0"
 readonly AGENTBOX_DIR="${AGENTBOX_DIR:-${HOME}/.agentbox}"
 readonly AGENTBOX_CONFIG="${AGENTBOX_DIR}/config.sh"
-readonly AGENTBOX_POLICY_BIN="${AGENTBOX_DIR}/bin"
 
 # Colors (disabled if not a terminal)
 if [[ -t 2 ]]; then
@@ -310,7 +309,7 @@ create_agent_worktree() {
         branch="agent/${short_id}"
     fi
 
-    # Generate worktree path (adjacent to repo)
+    # Generate worktree path inside {repo_name}-agents directory
     local repo_name
     repo_name="$(basename "$repo_path")"
     local repo_parent
@@ -325,7 +324,14 @@ create_agent_worktree() {
         wt_suffix="${branch##*/}"
     fi
 
-    local worktree_path="${repo_parent}/${repo_name}-wt-${wt_suffix}"
+    # Create agents directory if it doesn't exist
+    local agents_dir="${repo_parent}/${repo_name}-agents"
+    if [[ ! -d "$agents_dir" ]]; then
+        mkdir -p "$agents_dir" || die 1 "Failed to create agents directory: $agents_dir"
+        log_info "Created agents directory: $agents_dir"
+    fi
+
+    local worktree_path="${agents_dir}/wt-${wt_suffix}"
 
     # Check if worktree path already exists
     if [[ -e "$worktree_path" ]]; then
