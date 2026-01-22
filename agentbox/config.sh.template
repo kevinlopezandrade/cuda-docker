@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# ~/.agentbox/config.sh - Agentbox user configuration
+#
+# This file is sourced by agentbox launchers.
+# Customize these settings for your environment.
+# shellcheck shell=bash
+
+#######################################
+# Tooling repositories
+#######################################
+# These repos are ALWAYS mounted into containers with:
+#   - Worktree: read-write (you can edit)
+#   - .git: read-only (agents cannot commit)
+#
+# Inside container, run: ~/scripts/setup.sh to install your tooling.
+
+AGENTBOX_TOOLS=(
+    "$HOME/scripts"
+)
+
+#######################################
+# Default images
+#######################################
+# These are used when --image is not specified.
+# Update these to point to your container registry.
+
+# Standard image: full dev environment with git
+AGENTBOX_IMAGE_STANDARD="cuda-dev:standard"
+
+# Secure image: git completely removed
+AGENTBOX_IMAGE_SECURE="cuda-dev:secure"
+
+# You can use your custom images:
+# AGENTBOX_IMAGE_STANDARD="your-registry.com/cuda-dev:standard"
+# AGENTBOX_IMAGE_SECURE="your-registry.com/cuda-dev:secure"
+
+#######################################
+# Default mode
+#######################################
+# "patch" - agents cannot commit (default, safest)
+# "yolo"  - agents can commit locally
+# "lockdown" - use secure image, maximum restriction
+
+AGENTBOX_DEFAULT_MODE="patch"
+
+#######################################
+# Slurm defaults (agentbox-slurm)
+#######################################
+# Default Slurm partition
+# AGENTBOX_SLURM_PARTITION="gpu"
+
+# Default GPU request
+# AGENTBOX_SLURM_GPUS="1"
+
+# Default memory
+# AGENTBOX_SLURM_MEM="32G"
+
+# Default time limit
+# AGENTBOX_SLURM_TIME="4:00:00"
+
+#######################################
+# Docker defaults (agentbox-docker)
+#######################################
+# Default GPU request (requires nvidia-docker)
+# AGENTBOX_DOCKER_GPUS="all"
+
+#######################################
+# Advanced settings
+#######################################
+# Enable debug logging
+# AGENTBOX_DEBUG=1
+
+# Custom policy bin location (default: ~/.agentbox/bin)
+# AGENTBOX_POLICY_BIN="$HOME/.agentbox/bin"

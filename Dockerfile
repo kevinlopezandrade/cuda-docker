@@ -1,13 +1,24 @@
-# CUDA + Ubuntu base
+# CUDA + Ubuntu development container for agentbox
+#
+# Build targets:
+#   standard - Full dev environment with git (default)
+#   secure   - Git completely removed (for lockdown mode)
+#
+# Usage:
+#   docker build --target standard -t cuda-dev:standard .
+#   docker build --target secure -t cuda-dev:secure .
+
 ARG CUDA_VERSION=12.8.1
 ARG UBUNTU_VERSION=24.04
 ARG BASE_IMAGE=nvcr.io/nvidia/cuda:${CUDA_VERSION}-cudnn-devel-ubuntu${UBUNTU_VERSION}
-ARG DEBIAN_FRONTEND=noninteractive
 
 FROM ${BASE_IMAGE} AS base
 
-# More robust shell for RUN commands
+# Robust shell for RUN commands
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Build-time variables
+ARG DEBIAN_FRONTEND=noninteractive
 
 # Core environment
 ENV TZ=Europe/Zurich \
@@ -15,7 +26,8 @@ ENV TZ=Europe/Zurich \
     LC_ALL=C.UTF-8 \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    CUDA_HOME=/usr/local/cuda
 
 # System packages
 RUN apt-get update && \
@@ -27,7 +39,6 @@ RUN apt-get update && \
         git \
         git-lfs \
         net-tools \
-        curl \
         # --- Python + build toolchain ---
         python3 \
         python3-dev \
@@ -37,9 +48,7 @@ RUN apt-get update && \
         cmake \
         ninja-build \
         pkg-config \
-        # --- CLI + dev QoL tools (optional, but nice) ---
-        apt-utils \
-        # software-properties-common (Add extra PPA repos) \
+        # --- CLI + dev tools ---
         jq \
         htop \
         tmux \
@@ -55,101 +64,94 @@ RUN apt-get update && \
         stow \
         nvtop \
         tini \
+        gosu \
     && git lfs install --system \
     && rm -rf /var/lib/apt/lists/*
 
 # fd-find uses 'fdfind' binary; many people expect 'fd'
-RUN ln -s /usr/bin/fdfind /usr/local/bin/fd || true
-
-# CUDA Location
-ENV CUDA_HOME=/usr/local/cuda
-
-# GIT Defense
-# Dont' allow to push or pull from the internet.
-RUN git config --system protocol.file.allow always \
- && git config --system protocol.http.allow never \
- && git config --system protocol.https.allow never \
- && git config --system protocol.ssh.allow never \
- && git config --system protocol.git.allow never
-
-RUN git config --global user.email "kevin@tufalabs.ai"
-RUN git config --global user.name "Kev"
+RUN ln -s /usr/bin/fdfind /usr/local/bin/fd 2>/dev/null || true
 
 # Install Node.js LTS (22.x) from NodeSource
 RUN set -eux; \
-    ARCH=$(dpkg --print-architecture); \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg; \
-    echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" > /etc/apt/sources.list.d/nodesource.list; \
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+        | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg; \
+    echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+        > /etc/apt/sources.list.d/nodesource.list; \
     apt-get update; \
     apt-get install -y --no-install-recommends nodejs; \
     rm -rf /var/lib/apt/lists/*
 
-# Install Codex CLI from npm
-RUN set -eux; \
-    npm install -g @openai/codex \
-    npm cache clean --force
+# Install Claude Code (installs to $HOME/.local/bin/claude, copy to /usr/local/bin)
+RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    install -m 0755 /root/.local/bin/claude /usr/local/bin/claude
 
-# Install uv
+# Install Codex CLI (same location as Claude)
+RUN set -eux; \
+    curl -fsSL -o /tmp/codex.tar.gz \
+        https://github.com/openai/codex/releases/latest/download/codex-x86_64-unknown-linux-musl.tar.gz; \
+    tar -xzf /tmp/codex.tar.gz -C /tmp; \
+    install -m 0755 /tmp/codex-x86_64-unknown-linux-musl /usr/local/bin/codex; \
+    rm -f /tmp/codex.tar.gz /tmp/codex-x86_64-unknown-linux-musl
+
+# Install uv (fast Python package manager)
 ADD https://astral.sh/uv/install.sh /uv-installer.sh
-RUN sh /uv-installer.sh && rm /uv-installer.sh; \
+RUN sh /uv-installer.sh && rm /uv-installer.sh && \
     install -m 0755 /root/.local/bin/uv /usr/local/bin/uv
 
-# Optional: avoid noisy bells; provide a simple notifier noop
-RUN set -eux; echo '#!/bin/sh' > /usr/local/bin/afplay && chmod +x /usr/local/bin/afplay
+# Silence bell (noop afplay for tools that expect macOS)
+RUN echo '#!/bin/sh' > /usr/local/bin/afplay && chmod +x /usr/local/bin/afplay
 
-# Create a non-root user for development
-ARG USERNAME=dev
-ARG UID=1001
-ARG GID=1001
-
-RUN groupadd -g "${GID}" "${USERNAME}" && \
-    useradd -m -u "${UID}" -g "${GID}" -s /usr/bin/zsh "${USERNAME}"
-
-ENV CODEX_HOME=/home/"${USERNAME}"/.codex \
-    NODE_OPTIONS=--unhandled-rejections=strict \
+# Environment for tools
+ENV NODE_OPTIONS=--unhandled-rejections=strict \
     UV_LINK_MODE=copy \
     UV_PYTHON_PREFERENCE=managed
 
-# Default workdir
+# Entrypoint script handles user home directory creation and privilege dropping
+COPY agentbox/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-USER "${USERNAME}"
-WORKDIR /workspace
+# Use tini as init (signal handling, zombie reaping), then our entrypoint
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 
-# Healthcheck is a no-op (Codex runs via exec)
+# No healthcheck needed (interactive container)
 HEALTHCHECK NONE
 
-# Use tini as init to handle signals/zombies correctly
-ENTRYPOINT ["/usr/bin/tini", "--"]
-
 # ==========================================
-# STAGE 1: STANDARD (The full dev image)
+# STAGE: STANDARD (Full dev image with git)
 # ==========================================
 FROM base AS standard
-CMD ["zsh"]
+
+# Git policy wrapper - intercepts git commands and enforces agentbox policies
+# Placed at /usr/local/bin/git which takes precedence over /usr/bin/git in PATH
+# Behavior controlled by AGENT_ALLOW_COMMIT env var (0=block commits, 1=allow)
+COPY agentbox/bin/git /usr/local/bin/git
+RUN chmod +x /usr/local/bin/git
+
+CMD ["bash"]
 
 
 # ==========================================
-# STAGE 2: SECURE (Git/Tools Disabled)
+# STAGE: SECURE (Git completely removed)
 # ==========================================
 FROM standard AS secure
 
-# Switch to root temporarily to write to /usr/local/bin
-USER root
+# Remove git entirely
+RUN apt-get update && \
+    apt-get -y purge git git-lfs && \
+    apt-get -y autoremove && \
+    rm -rf /var/lib/apt/lists/*
 
-# Uninstall Git and Git-LFS to free space and remove the binaries
-RUN apt-get -y purge git git-lfs \
-    && apt-get -y autoremove \
-    && rm -rf /var/lib/apt/lists/*
-
+# Stub scripts with clear error messages
 RUN set -eux; \
-    echo '#!/bin/sh\necho "git is disabled in this container" >&2; exit 127' > /usr/local/bin/git && chmod +x /usr/local/bin/git; \
-    echo '#!/bin/sh\necho "git-lfs is disabled in this container" >&2; exit 127' > /usr/local/bin/git-lfs && chmod +x /usr/local/bin/git-lfs; \
-    echo '#!/bin/sh\necho "GitHub CLI (gh) is disabled in this container" >&2; exit 127' > /usr/local/bin/gh && chmod +x /usr/local/bin/gh
+    for cmd in git git-lfs gh; do \
+        printf '#!/bin/sh\necho "ERROR: %s is disabled in this container (secure mode)" >&2\nexit 127\n' "$cmd" \
+            > "/usr/local/bin/$cmd"; \
+        chmod +x "/usr/local/bin/$cmd"; \
+    done
 
-RUN set -eux; \
-    mkdir -p /etc/apt/preferences.d; \
-    printf 'Package: git*\nPin: release *\nPin-Priority: -1\n' > /etc/apt/preferences.d/deny-git
+# Prevent reinstallation via apt
+RUN mkdir -p /etc/apt/preferences.d && \
+    printf 'Package: git*\nPin: release *\nPin-Priority: -1\n' \
+        > /etc/apt/preferences.d/deny-git
 
-# Switch back to the dev user for runtime
-USER "${USERNAME}"
-CMD ["zsh"]
+CMD ["bash"]

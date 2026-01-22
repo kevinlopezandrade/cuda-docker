@@ -1,7 +1,7 @@
-.*
-.git*
-.git/
-*.bkp
+# Ignore everything by default
+*
+
+# Only include what's needed for the build
 !Dockerfile
-!build.sh
-!run.sh
+!agentbox/bin/git
+!agentbox/docker/entrypoint.sh

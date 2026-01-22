@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+# agentbox-slurm - Launch agentbox containers with Slurm/Pyxis
+#
+# Usage: agentbox-slurm [OPTIONS] [-- SLURM_ARGS...]
+#
+# shellcheck shell=bash
+
+set -euo pipefail
+
+#######################################
+# Determine script location and load libraries
+#######################################
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Support both installed (~/.agentbox) and development (repo) layouts
+if [[ -f "${SCRIPT_DIR}/../lib/core.sh" ]]; then
+    # Development/repo layout
+    AGENTBOX_LIB="${SCRIPT_DIR}/../lib"
+    AGENTBOX_DIR="${SCRIPT_DIR}/.."
+else
+    # Installed layout
+    AGENTBOX_LIB="${HOME}/.agentbox/lib"
+    AGENTBOX_DIR="${HOME}/.agentbox"
+fi
+
+# Source libraries
+# shellcheck source=../lib/core.sh
+source "${AGENTBOX_LIB}/core.sh"
+# shellcheck source=../lib/mounts.sh
+source "${AGENTBOX_LIB}/mounts.sh"
+# shellcheck source=../lib/env.sh
+source "${AGENTBOX_LIB}/env.sh"
+# shellcheck source=../lib/slurm.sh
+source "${AGENTBOX_LIB}/slurm.sh"
+
+#######################################
+# Usage
+#######################################
+usage() {
+    cat <<EOF
+Usage: agentbox-slurm [OPTIONS] [-- SLURM_ARGS...]
+
+Launch an agentbox container using Slurm with Pyxis.
+
+OPTIONS:
+  -p, --proj PATH       Project directory (default: current directory)
+  -t, --tools PATH      Additional tooling repo to mount (repeatable)
+  -m, --mode MODE       Agent mode: patch, yolo, lockdown (default: patch)
+  -n, --name NAME       Container name (enables reattachment)
+      --image IMAGE     Container image (overrides config default)
+      --cmd COMMAND     Command to run in container (default: bash)
+  -h, --help            Show this help message
+      --debug           Enable debug logging
+
+MODES:
+  patch     Agents cannot commit (.git read-only). DEFAULT.
+  yolo      Agents can commit locally (but never push).
+  lockdown  Use secure image (git binary removed).
+
+SLURM_ARGS:
+  Arguments after -- are passed directly to 'srun'.
+  Common options:
+    --gpus N            Request N GPUs
+    --mem SIZE          Request memory (e.g., 32G)
+    --cpus-per-task N   Request N CPUs
+    --time HH:MM:SS     Time limit
+    --partition NAME    Slurm partition
+
+EXAMPLES:
+  # Basic usage in current directory (patch mode)
+  agentbox-slurm
+
+  # Yolo mode with named container (for reattachment)
+  agentbox-slurm --yolo -p ~/projects/myapp -n mydev
+
+  # With GPUs and memory via Slurm args
+  agentbox-slurm -p ~/projects/myapp -- --gpus 4 --mem 64G
+
+  # Reattach to named container
+  agentbox-slurm attach mydev
+
+REATTACHMENT:
+  To reattach to a running named container:
+    agentbox-slurm attach NAME [-- SLURM_ARGS...]
+
+EOF
+}
+
+#######################################
+# Parse arguments
+#######################################
+PROJ=""
+MODE=""
+IMAGE=""
+NAME=""
+CMD=""
+ATTACH_MODE=0
+declare -a EXTRA_TOOLS=()
+declare -a SLURM_EXTRA_ARGS=()
+
+parse_args() {
+    # Check for attach subcommand
+    if [[ "${1:-}" == "attach" ]]; then
+        ATTACH_MODE=1
+        shift
+        if [[ $# -lt 1 ]]; then
+            die_usage "attach requires a container name"
+        fi
+        NAME="$1"
+        shift
+        # Rest goes to slurm args (skip --)
+        if [[ "${1:-}" == "--" ]]; then
+            shift
+        fi
+        SLURM_EXTRA_ARGS=("$@")
+        return
+    fi
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -p|--proj)
+                PROJ="$2"
+                shift 2
+                ;;
+            -t|--tools)
+                EXTRA_TOOLS+=("$2")
+                shift 2
+                ;;
+            -m|--mode)
+                MODE="$2"
+                shift 2
+                ;;
+            --patch)
+                MODE="patch"
+                shift
+                ;;
+            --yolo)
+                MODE="yolo"
+                shift
+                ;;
+            --lockdown)
+                MODE="lockdown"
+                shift
+                ;;
+            -n|--name)
+                NAME="$2"
+                shift 2
+                ;;
+            --image)
+                IMAGE="$2"
+                shift 2
+                ;;
+            --cmd)
+                CMD="$2"
+                shift 2
+                ;;
+            --debug)
+                export AGENTBOX_DEBUG=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            --)
+                shift
+                SLURM_EXTRA_ARGS=("$@")
+                break
+                ;;
+            -*)
+                die_usage "Unknown option: $1"
+                ;;
+            *)
+                # Positional argument - treat as project if not set
+                if [[ -z "$PROJ" ]]; then
+                    PROJ="$1"
+                else
+                    die_usage "Unexpected argument: $1"
+                fi
+                shift
+                ;;
+        esac
+    done
+}
+
+#######################################
+# Main
+#######################################
+main() {
+    parse_args "$@"
+
+    # Handle attach mode
+    if [[ $ATTACH_MODE -eq 1 ]]; then
+        slurm_validate
+        slurm_attach "$NAME" "${SLURM_EXTRA_ARGS[@]}"
+        exit 0
+    fi
+
+    # Load user config
+    load_config
+
+    # Apply defaults
+    PROJ="${PROJ:-$(pwd)}"
+    MODE="${MODE:-${AGENTBOX_DEFAULT_MODE:-patch}}"
+    CMD="${CMD:-bash}"
+
+    # Select image based on mode
+    if [[ -z "$IMAGE" ]]; then
+        case "$MODE" in
+            lockdown)
+                IMAGE="${AGENTBOX_IMAGE_SECURE:-}"
+                ;;
+            *)
+                IMAGE="${AGENTBOX_IMAGE_STANDARD:-}"
+                ;;
+        esac
+    fi
+
+    if [[ -z "$IMAGE" ]]; then
+        die 1 "No image specified and no default configured. Use --image or set AGENTBOX_IMAGE_STANDARD in config."
+    fi
+
+    # Resolve project path
+    PROJ="$(resolve_path "$PROJ")"
+
+    # Validate
+    slurm_validate
+    require_directory "$PROJ" "Project directory"
+
+    log_info "Mode: $MODE"
+    log_info "Project: $PROJ"
+    log_info "Image: $IMAGE"
+    if [[ -n "$NAME" ]]; then
+        log_info "Container name: $NAME"
+    fi
+
+    # Build mounts
+    mounts_reset
+    mount_project "$PROJ" "$MODE"
+    mount_all_tooling
+
+    # Mount extra tools specified on command line
+    for tool in "${EXTRA_TOOLS[@]}"; do
+        mount_tooling "$tool"
+    done
+
+    # Mount /etc/passwd and /etc/group for UID/GID resolution
+    mount_user_identity
+
+    log_debug "Mounts ($(mounts_count)):"
+    if [[ "${AGENTBOX_DEBUG:-0}" == "1" ]]; then
+        mounts_dump | while read -r line; do log_debug "  $line"; done
+    fi
+
+    # Build environment
+    env_reset
+    env_setup_all "$MODE"
+
+    log_debug "Environment:"
+    if [[ "${AGENTBOX_DEBUG:-0}" == "1" ]]; then
+        env_dump | while read -r line; do log_debug "  $line"; done
+    fi
+
+    # Add default Slurm args from config if not overridden
+    declare -a slurm_args=()
+
+    # Check if user provided these in SLURM_EXTRA_ARGS
+    has_arg() {
+        local needle="$1"
+        for arg in "${SLURM_EXTRA_ARGS[@]}"; do
+            if [[ "$arg" == "$needle"* ]]; then
+                return 0
+            fi
+        done
+        return 1
+    }
+
+    # Apply config defaults only if not specified
+    if [[ -n "${AGENTBOX_SLURM_PARTITION:-}" ]] && ! has_arg "--partition"; then
+        slurm_args+=(--partition "${AGENTBOX_SLURM_PARTITION}")
+    fi
+
+    if [[ -n "${AGENTBOX_SLURM_GPUS:-}" ]] && ! has_arg "--gpus"; then
+        slurm_args+=(--gpus "${AGENTBOX_SLURM_GPUS}")
+    fi
+
+    if [[ -n "${AGENTBOX_SLURM_MEM:-}" ]] && ! has_arg "--mem"; then
+        slurm_args+=(--mem "${AGENTBOX_SLURM_MEM}")
+    fi
+
+    if [[ -n "${AGENTBOX_SLURM_TIME:-}" ]] && ! has_arg "--time"; then
+        slurm_args+=(--time "${AGENTBOX_SLURM_TIME}")
+    fi
+
+    # Add user-provided args
+    slurm_args+=("${SLURM_EXTRA_ARGS[@]}")
+
+    # Execute
+    slurm_run "$IMAGE" "$PROJ" "$NAME" "$CMD" "${slurm_args[@]}"
+}
+
+main "$@"

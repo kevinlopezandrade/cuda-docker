@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# agentbox/bin/git - Git policy wrapper
+#
+# This wrapper intercepts git commands and enforces agentbox policies:
+# - Network operations (push, fetch, pull, clone) are ALWAYS forbidden
+# - Write operations (commit, merge, etc.) depend on AGENT_ALLOW_COMMIT
+#
+# Place this in PATH before /usr/bin/git to intercept git calls.
+# shellcheck shell=bash
+
+set -euo pipefail
+
+# Find the real git binary (skip this wrapper)
+find_real_git() {
+    local found=""
+    local self
+    self="$(realpath "${BASH_SOURCE[0]}")"
+
+    # Search PATH for git, skipping ourselves
+    IFS=':' read -ra path_dirs <<< "$PATH"
+    for dir in "${path_dirs[@]}"; do
+        local candidate="${dir}/git"
+        if [[ -x "$candidate" ]]; then
+            local real_candidate
+            real_candidate="$(realpath "$candidate" 2>/dev/null || echo "$candidate")"
+            if [[ "$real_candidate" != "$self" ]]; then
+                found="$candidate"
+                break
+            fi
+        fi
+    done
+
+    if [[ -z "$found" ]]; then
+        # Fallback to common locations
+        for candidate in /usr/bin/git /usr/local/bin/git /opt/homebrew/bin/git; do
+            if [[ -x "$candidate" ]]; then
+                found="$candidate"
+                break
+            fi
+        done
+    fi
+
+    echo "$found"
+}
+
+REAL_GIT="$(find_real_git)"
+
+if [[ -z "$REAL_GIT" ]]; then
+    echo "AGENTBOX: Cannot find real git binary." >&2
+    exit 127
+fi
+
+# Get the git subcommand (first non-flag argument)
+get_subcommand() {
+    for arg in "$@"; do
+        # Skip flags
+        if [[ "$arg" != -* ]]; then
+            echo "$arg"
+            return
+        fi
+    done
+}
+
+SUBCMD="$(get_subcommand "$@")"
+
+# Policy enforcement
+case "$SUBCMD" in
+    # Network operations: ALWAYS forbidden
+    push)
+        echo "AGENTBOX POLICY: 'git push' is forbidden in this container." >&2
+        echo "                 Agents cannot push to remote repositories." >&2
+        exit 2
+        ;;
+
+    fetch)
+        echo "AGENTBOX POLICY: 'git fetch' is forbidden in this container." >&2
+        echo "                 Use the host to sync with remotes." >&2
+        exit 2
+        ;;
+
+    pull)
+        echo "AGENTBOX POLICY: 'git pull' is forbidden in this container." >&2
+        echo "                 Use the host to sync with remotes." >&2
+        exit 2
+        ;;
+
+    clone)
+        echo "AGENTBOX POLICY: 'git clone' is forbidden in this container." >&2
+        echo "                 Clone repositories on the host and mount them." >&2
+        exit 2
+        ;;
+
+    remote)
+        # Allow 'git remote' for reading, but block modifications
+        # Check if any write operation is attempted
+        for arg in "$@"; do
+            case "$arg" in
+                add|remove|rm|rename|set-url|set-head|set-branches|prune)
+                    echo "AGENTBOX POLICY: Modifying git remotes is forbidden." >&2
+                    exit 2
+                    ;;
+            esac
+        done
+        # Allow read-only remote operations (git remote -v, git remote show, etc.)
+        exec "$REAL_GIT" "$@"
+        ;;
+
+    # Write operations: depend on AGENT_ALLOW_COMMIT
+    commit|merge|rebase|cherry-pick|am|reset|stash|tag)
+        if [[ "${AGENT_ALLOW_COMMIT:-0}" != "1" ]]; then
+            echo "AGENTBOX POLICY: 'git $SUBCMD' is disabled in this container." >&2
+            exit 2
+        fi
+        exec "$REAL_GIT" "$@"
+        ;;
+
+    # Read operations and everything else: allowed
+    *)
+        exec "$REAL_GIT" "$@"
+        ;;
+esac
