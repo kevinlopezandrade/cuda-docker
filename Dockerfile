@@ -71,16 +71,6 @@ RUN apt-get update && \
 # fd-find uses 'fdfind' binary; many people expect 'fd'
 RUN ln -s /usr/bin/fdfind /usr/local/bin/fd 2>/dev/null || true
 
-# Install Node.js LTS (22.x) from NodeSource
-RUN set -eux; \
-    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-        | gpg --dearmor -o /usr/share/keyrings/nodesource.gpg; \
-    echo "deb [signed-by=/usr/share/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
-        > /etc/apt/sources.list.d/nodesource.list; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends nodejs; \
-    rm -rf /var/lib/apt/lists/*
-
 # Install Claude Code (installs to $HOME/.local/bin/claude, copy to /usr/local/bin)
 RUN curl -fsSL https://claude.ai/install.sh | bash && \
     install -m 0755 /root/.local/bin/claude /usr/local/bin/claude
@@ -105,9 +95,8 @@ RUN echo '#!/bin/sh' > /usr/local/bin/afplay && chmod +x /usr/local/bin/afplay
 RUN echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/local-bin.sh
 
 # Environment for tools
-ENV NODE_OPTIONS=--unhandled-rejections=strict \
-    UV_LINK_MODE=copy \
-    UV_PYTHON_PREFERENCE=managed
+ENV UV_PYTHON_PREFERENCE=managed \
+    EDITOR=vim
 
 # Entrypoint script handles user home directory creation and privilege dropping
 COPY agentbox/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
