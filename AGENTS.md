@@ -38,6 +38,7 @@ When running AI coding agents (Claude Code, Codex, etc.) in containers, several 
 │   └── slurm.sh         # Slurm/Pyxis-specific functions
 ├── launchers/
 │   ├── box              # Docker launcher
+│   ├── boxc             # Docker launcher with claude
 │   ├── sbox             # Slurm launcher
 │   └── wt-init          # Initialize submodules for worktrees
 ├── config.sh            # User configuration
@@ -99,6 +100,12 @@ AGENTBOX_PASSTHROUGH_ENV=(
 ```bash
 # Basic (patch mode, current directory)
 box
+
+# Launch with claude as default command
+boxc -p ~/projects/myapp
+
+# Launch with claude and skip permissions
+boxc -s -p ~/projects/myapp
 
 # Explicit project path
 box -p ~/projects/myapp

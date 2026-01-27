@@ -230,7 +230,10 @@ docker_run() {
         # Keep-alive mode: run sleep infinity as PID 1
         cmd+=(sleep infinity)
     elif [[ -n "$container_cmd" ]]; then
-        cmd+=("$container_cmd")
+        # Use bash -l -c to properly handle multi-word commands with arguments
+        # -l (login shell) ensures /etc/profile.d/ scripts are sourced (e.g., PATH setup)
+        # See docs/known-issues.md for background
+        cmd+=(bash -l -c "$container_cmd")
     fi
 
     log_debug "Docker command: ${cmd[*]}"

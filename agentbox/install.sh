@@ -135,6 +135,7 @@ main() {
     # Install launchers (symlinks)
     log_info "Symlinking launchers..."
     ln -sf "${SCRIPT_DIR}/launchers/box" "${INSTALL_DIR}/launchers/box"
+    ln -sf "${SCRIPT_DIR}/launchers/boxc" "${INSTALL_DIR}/launchers/boxc"
     ln -sf "${SCRIPT_DIR}/launchers/sbox" "${INSTALL_DIR}/launchers/sbox"
     ln -sf "${SCRIPT_DIR}/launchers/wt-init" "${INSTALL_DIR}/launchers/wt-init"
     log_success "Launchers linked"
@@ -171,9 +172,11 @@ main() {
     echo ""
     echo "3. Usage:"
     echo ""
-    echo "   ${BLUE}box -p ~/project${RESET}        # Docker"
-    echo "   ${BLUE}sbox -p ~/project${RESET}       # Slurm"
-    echo "   ${BLUE}sbox --yolo -p ~/project${RESET}  # Allow commits"
+    echo "   ${BLUE}box -p ~/project${RESET}          # Docker"
+    echo "   ${BLUE}boxc -p ~/project${RESET}         # Docker with claude"
+    echo "   ${BLUE}boxc -s -p ~/project${RESET}      # Docker with claude (skip perms)"
+    echo "   ${BLUE}sbox -p ~/project${RESET}         # Slurm"
+    echo "   ${BLUE}sbox --yolo -p ~/project${RESET}    # Allow commits"
     echo ""
 }
 

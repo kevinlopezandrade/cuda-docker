@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# boxc - Launch agentbox containers with Claude as the default command
+#
+# Usage: boxc [OPTIONS] [-- DOCKER_ARGS...]
+#
+# This is a wrapper around 'box' that automatically starts with 'claude'
+# instead of bash.
+#
+# OPTIONS:
+#   -s, --skip-perms    Add --dangerously-skip-permissions to claude command
+#
+# All other options are passed through to 'box'.
+#
+# shellcheck shell=bash
+
+set -euo pipefail
+
+#######################################
+# Determine script location
+#######################################
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Find the box launcher
+if [[ -f "${SCRIPT_DIR}/box" ]]; then
+    BOX_LAUNCHER="${SCRIPT_DIR}/box"
+elif command -v box >/dev/null 2>&1; then
+    BOX_LAUNCHER="box"
+else
+    echo "Error: Could not find 'box' launcher" >&2
+    exit 1
+fi
+
+#######################################
+# Parse arguments
+#######################################
+has_cmd_flag=0
+skip_perms=0
+box_args=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --cmd)
+            has_cmd_flag=1
+            box_args+=("$1")
+            shift
+            ;;
+        -s|--skip-perms)
+            skip_perms=1
+            shift
+            ;;
+        *)
+            box_args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+#######################################
+# Build claude command
+#######################################
+if [[ $skip_perms -eq 1 ]]; then
+    CLAUDE_CMD="claude --dangerously-skip-permissions"
+else
+    CLAUDE_CMD="claude"
+fi
+
+#######################################
+# Execute box with claude as default command
+#######################################
+if [[ $has_cmd_flag -eq 1 ]]; then
+    # User specified --cmd, pass through as-is
+    exec "$BOX_LAUNCHER" "${box_args[@]}"
+else
+    # Add --cmd claude (with optional flags)
+    exec "$BOX_LAUNCHER" --cmd "$CLAUDE_CMD" "${box_args[@]}"
+fi
