@@ -110,30 +110,72 @@ docker_build_command() {
     echo "$image"
 }
 
+# Generate container name for agentbox
+# Arguments:
+#   $1 - Working directory
+#   $2 - Custom name (optional)
+# Outputs:
+#   Container name
+# Globals:
+#   AGENTBOX_WORKTREE_BRANCH (optional)
+docker_generate_container_name() {
+    local workdir="$1"
+    local custom_name="${2:-}"
+
+    # If custom name provided, use it
+    if [[ -n "$custom_name" ]]; then
+        echo "agentbox-${custom_name}"
+        return
+    fi
+
+    local branch="${AGENTBOX_WORKTREE_BRANCH:-}"
+
+    if [[ -n "$branch" ]]; then
+        # Worktree: extract project from agents dir
+        # Path looks like: /path/myapp-agents/wt-xxx
+        local agents_dir
+        agents_dir="$(dirname "$workdir")"
+        local project_name="${agents_dir##*/}"
+        project_name="${project_name%-agents}"
+
+        # Extract branch suffix (last component after /)
+        local branch_suffix="${branch##*/}"
+
+        # Sanitize: replace non-alphanumeric with dash, collapse multiple dashes
+        branch_suffix="$(echo "$branch_suffix" | tr -cs 'a-zA-Z0-9' '-' | sed 's/^-//;s/-$//')"
+
+        echo "agentbox-${project_name}-${branch_suffix}"
+    else
+        echo "agentbox-$(basename "$workdir")"
+    fi
+}
+
 # Execute docker run
 # Arguments:
 #   $1 - Image name
 #   $2 - Working directory
 #   $3 - Command to run in container (optional)
 #   $4 - Keep alive flag (0 or 1)
+#   $5 - Custom container name (optional)
 #   $@ - Additional docker args (passed before image)
 # Globals:
 #   AGENTBOX_MOUNTS
 #   AGENTBOX_ENV
+#   AGENTBOX_WORKTREE_BRANCH (optional, used for labels)
 docker_run() {
     local image="$1"
     local workdir="$2"
     local container_cmd="${3:-}"
     local keep_alive="${4:-0}"
-    shift 4 || shift $#
+    local custom_name="${5:-}"
+    shift 5 || shift $#
     local -a extra_args=("$@")
 
     require_command docker "Please install Docker."
 
-    # Generate container name from project directory
-    local project_name
-    project_name="$(basename "$workdir")"
-    local container_name="agentbox-${project_name}"
+    # Generate container name
+    local container_name
+    container_name="$(docker_generate_container_name "$workdir" "$custom_name")"
 
     local -a cmd=()
 
@@ -161,6 +203,21 @@ docker_run() {
             cmd+=(-e "${name}=${AGENTBOX_ENV[$name]}")
         fi
     done
+
+    # Labels for container identification
+    cmd+=(--label "com.agentbox.workdir=${workdir}")
+    cmd+=(--label "com.agentbox.created=$(date -Iseconds)")
+    if [[ -n "${AGENTBOX_WORKTREE_BRANCH:-}" ]]; then
+        cmd+=(--label "com.agentbox.branch=${AGENTBOX_WORKTREE_BRANCH}")
+        # Extract project name from agents dir path
+        local agents_dir
+        agents_dir="$(dirname "$workdir")"
+        local project_name="${agents_dir##*/}"
+        project_name="${project_name%-agents}"
+        cmd+=(--label "com.agentbox.project=${project_name}")
+    else
+        cmd+=(--label "com.agentbox.project=$(basename "$workdir")")
+    fi
 
     # Extra args
     cmd+=("${extra_args[@]}")

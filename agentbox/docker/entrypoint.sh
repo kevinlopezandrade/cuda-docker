@@ -101,6 +101,22 @@ if [[ "$(id -u)" -eq 0 ]]; then
         chown "$HOST_UID:$HOST_GID" "$USER_HOME/.local" "$local_share_dir"
     fi
 
+    # Create ~/.claude.json to skip onboarding
+    claude_config="$USER_HOME/.claude.json"
+    if [[ ! -f "$claude_config" ]]; then
+        log_info "Creating Claude Code configuration: $claude_config"
+        cat > "$claude_config" <<'EOF'
+{
+  "hasCompletedOnboarding": true,
+  "theme": "dark",
+  "hasTrustDialogAccepted": true,
+  "hasTrustDialogHooksAccepted": true,
+  "bypassPermissionsModeAccepted": true
+}
+EOF
+        chown "$HOST_UID:$HOST_GID" "$claude_config"
+    fi
+
     # Drop privileges and execute the command
     log_info "Running as $USERNAME (UID=$HOST_UID, GID=$HOST_GID)"
     exec gosu "$HOST_UID:$HOST_GID" "$@"
@@ -123,6 +139,25 @@ else
         fi
 
         log_info "Running as $USERNAME (UID=$CURRENT_UID)"
+
+        # Create ~/.claude.json to skip onboarding
+        claude_config="$USER_HOME/.claude.json"
+        if [[ -n "$USER_HOME" ]] && [[ ! -f "$claude_config" ]]; then
+            if mkdir -p "$(dirname "$claude_config")" 2>/dev/null; then
+                log_info "Creating Claude Code configuration: $claude_config"
+                cat > "$claude_config" <<'EOF'
+{
+  "hasCompletedOnboarding": true,
+  "theme": "dark",
+  "hasTrustDialogAccepted": true,
+  "hasTrustDialogHooksAccepted": true,
+  "bypassPermissionsModeAccepted": true
+}
+EOF
+            else
+                log_info "Warning: Could not create Claude Code configuration (home directory not writable)"
+            fi
+        fi
     else
         log_info "Running as UID $CURRENT_UID"
     fi

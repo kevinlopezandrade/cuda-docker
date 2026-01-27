@@ -40,6 +40,7 @@ OPTIONS:
   -w, --worktree        Create a git worktree for parallel development
       --branch NAME     Branch name for worktree (default: agent/<id>)
   -f, --from REF        Start worktree from REF (branch, tag, or commit)
+  -n, --name NAME       Container name (for easier identification/reattachment)
   -k, --keep            Keep container running after shell exit
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
   -v, --volume SPEC     Additional volume mount (repeatable)
@@ -52,6 +53,10 @@ OPTIONS:
       --cmd COMMAND     Command to run in container (default: interactive shell)
   -h, --help            Show this help message
       --debug           Enable debug logging
+
+SUBCOMMANDS:
+  ps                    List running agentbox containers
+  exec PATTERN          Exec into container matching pattern (branch/project/name)
 
 MODES:
   patch     Agents cannot commit (.git read-only). DEFAULT.
@@ -80,15 +85,112 @@ EOF
 }
 
 #######################################
+# Subcommands
+#######################################
+
+# List running agentbox containers with metadata
+box_ps() {
+    require_command docker "Please install Docker."
+
+    # Header
+    printf "%-28s %-10s %-24s %s\n" "NAME" "STATUS" "BRANCH" "PROJECT"
+    printf "%-28s %-10s %-24s %s\n" "----" "------" "------" "-------"
+
+    # List containers with agentbox labels (running and stopped)
+    docker ps -a --filter "label=com.agentbox.workdir" \
+        --format '{{.Names}}\t{{.State}}\t{{.Label "com.agentbox.branch"}}\t{{.Label "com.agentbox.project"}}' |
+    while IFS=$'\t' read -r name state branch project; do
+        branch="${branch:--}"
+        project="${project:--}"
+        printf "%-28s %-10s %-24s %s\n" "$name" "$state" "$branch" "$project"
+    done
+}
+
+# Exec into container matching pattern
+box_exec() {
+    local pattern="${1:-}"
+    local exec_user="${2:-}"
+
+    require_command docker "Please install Docker."
+
+    if [[ -z "$pattern" ]]; then
+        # No pattern: show interactive list
+        echo "Running agentbox containers:"
+        echo ""
+        box_ps
+        echo ""
+        echo "Usage: box exec <pattern> [--root]"
+        echo "  Pattern matches container name, branch, or project"
+        exit 1
+    fi
+
+    # Find matching containers (running only for exec)
+    local -a matches=()
+    local -a match_info=()
+
+    while IFS=$'\t' read -r name branch project; do
+        # Match against name, branch, or project
+        if [[ "$name" == *"$pattern"* ]] || \
+           [[ "$branch" == *"$pattern"* ]] || \
+           [[ "$project" == *"$pattern"* ]]; then
+            matches+=("$name")
+            match_info+=("$name ($branch, $project)")
+        fi
+    done < <(docker ps --filter "label=com.agentbox.workdir" \
+        --format '{{.Names}}\t{{.Label "com.agentbox.branch"}}\t{{.Label "com.agentbox.project"}}')
+
+    if [[ ${#matches[@]} -eq 0 ]]; then
+        echo "No running containers match '$pattern'"
+        echo ""
+        echo "Running containers:"
+        box_ps
+        exit 1
+    elif [[ ${#matches[@]} -eq 1 ]]; then
+        local container="${matches[0]}"
+        echo "Attaching to: ${match_info[0]}"
+
+        local -a exec_args=(-it)
+        if [[ "$exec_user" == "--root" ]]; then
+            exec_args+=(-u root)
+        fi
+
+        exec docker exec "${exec_args[@]}" "$container" bash -l
+    else
+        echo "Multiple containers match '$pattern':"
+        echo ""
+        for info in "${match_info[@]}"; do
+            echo "  $info"
+        done
+        echo ""
+        echo "Be more specific or use the full container name."
+        exit 1
+    fi
+}
+
+#######################################
 # Docker-specific variables
 #######################################
 GPUS=""
+NAME=""
 declare -a PORTS=()
 
 #######################################
 # Parse arguments
 #######################################
 parse_args() {
+    # Check for subcommands first
+    case "${1:-}" in
+        ps)
+            box_ps
+            exit 0
+            ;;
+        exec)
+            shift
+            box_exec "$@"
+            exit 0
+            ;;
+    esac
+
     # First pass: extract docker-specific args
     local -a args_for_common=()
 
@@ -96,6 +198,10 @@ parse_args() {
         case "$1" in
             --gpus)
                 GPUS="$2"
+                shift 2
+                ;;
+            -n|--name)
+                NAME="$2"
                 shift 2
                 ;;
             -P|--port)
@@ -175,7 +281,7 @@ main() {
     docker_args+=("${BACKEND_EXTRA_ARGS[@]}")
 
     # Execute
-    docker_run "$IMAGE" "$PROJ" "$CMD" "$KEEP_ALIVE" "${docker_args[@]}"
+    docker_run "$IMAGE" "$PROJ" "$CMD" "$KEEP_ALIVE" "$NAME" "${docker_args[@]}"
 }
 
 main "$@"
