@@ -32,6 +32,10 @@ ENV TZ=Europe/Zurich \
 # System packages
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
+        software-properties-common \
+    && add-apt-repository ppa:fish-shell/release-4 -y \
+    && apt-get update && \
+    apt-get install -y --no-install-recommends \
         # --- essentials / networking ---
         ca-certificates \
         curl \
@@ -57,6 +61,7 @@ RUN apt-get update && \
         ripgrep \
         fd-find \
         fzf \
+        fish \
         tree \
         unzip \
         zip \

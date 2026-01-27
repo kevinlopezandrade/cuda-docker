@@ -292,6 +292,7 @@ generate_short_id() {
 # Arguments:
 #   $1 - Source git repo path
 #   $2 - Branch name (optional, auto-generated if empty)
+#   $3 - Start point (optional, defaults to HEAD)
 # Outputs:
 #   Path to the created worktree
 # Globals:
@@ -299,6 +300,7 @@ generate_short_id() {
 create_agent_worktree() {
     local repo_path="$1"
     local branch="${2:-}"
+    local start_point="${3:-}"
 
     # Generate short ID for naming
     local short_id
@@ -346,16 +348,27 @@ create_agent_worktree() {
 
     log_info "Creating worktree at: $worktree_path"
     log_info "Branch: $branch"
+    if [[ -n "$start_point" ]]; then
+        log_info "Starting from: $start_point"
+    fi
 
     # Create worktree
     if [[ $branch_exists -eq 1 ]]; then
         # Branch exists, use it
+        if [[ -n "$start_point" ]]; then
+            log_warn "Branch '$branch' already exists, ignoring --from $start_point"
+        fi
         git -C "$repo_path" worktree add "$worktree_path" "$branch" || \
             die 1 "Failed to create worktree"
     else
-        # Create new branch from current HEAD
-        git -C "$repo_path" worktree add -b "$branch" "$worktree_path" || \
-            die 1 "Failed to create worktree with new branch"
+        # Create new branch from start_point (or HEAD if not specified)
+        if [[ -n "$start_point" ]]; then
+            git -C "$repo_path" worktree add -b "$branch" "$worktree_path" "$start_point" || \
+                die 1 "Failed to create worktree with new branch from $start_point"
+        else
+            git -C "$repo_path" worktree add -b "$branch" "$worktree_path" || \
+                die 1 "Failed to create worktree with new branch"
+        fi
     fi
 
     log_success "Worktree created"

@@ -39,6 +39,7 @@ OPTIONS:
   -p, --proj PATH       Project directory (default: current directory)
   -w, --worktree        Create a git worktree for parallel development
       --branch NAME     Branch name for worktree (default: agent/<id>)
+  -f, --from REF        Start worktree from REF (branch, tag, or commit)
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
   -v, --volume SPEC     Additional volume mount (repeatable)
                         Formats: /path, /path:ro, /src:/dst, /src:/dst:ro
@@ -64,6 +65,7 @@ EXAMPLES:
   sbox -p ~/proj -- --gpus 4 --mem 64G    # With Slurm resources
   sbox attach mydev                       # Reattach to container
   sbox -w -p ~/projects/myapp             # Create worktree
+  sbox -w -f main -p ~/projects/myapp     # Worktree starting from main
   sbox -v /data/datasets -p ~/proj        # Mount datasets directory
 
 REATTACHMENT:

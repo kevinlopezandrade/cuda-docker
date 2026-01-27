@@ -148,6 +148,13 @@ box -w -p ~/projects/myapp
 box -w --branch feature/auth -p ~/projects/myapp
 # Creates: ~/projects/myapp-agents/wt-auth on branch feature/auth
 
+# Start worktree from a specific branch/tag/commit
+box -w -f main -p ~/projects/myapp
+# Creates: ~/projects/myapp-agents/wt-a3f2 starting from main
+
+box -w --branch feature/auth -f develop -p ~/projects/myapp
+# Creates: ~/projects/myapp-agents/wt-auth starting from develop
+
 # With Slurm
 sbox -w -p ~/projects/myapp -- --gpus 1
 ```

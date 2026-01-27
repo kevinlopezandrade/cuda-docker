@@ -14,6 +14,7 @@ IMAGE=""
 CMD=""
 USE_WORKTREE=0
 BRANCH=""
+FROM_REF=""
 KEEP_ALIVE=0
 SHARE_UV_CACHE=1
 declare -a EXTRA_TOOLS=()
@@ -72,6 +73,10 @@ parse_common_args() {
                 ;;
             --branch)
                 BRANCH="$2"
+                shift 2
+                ;;
+            -f|--from)
+                FROM_REF="$2"
                 shift 2
                 ;;
             -k|--keep)
@@ -139,12 +144,12 @@ select_image_for_mode() {
 
 # Handle worktree creation if requested
 # Globals:
-#   USE_WORKTREE, PROJ, BRANCH
+#   USE_WORKTREE, PROJ, BRANCH, FROM_REF
 #   Sets PROJ to worktree path if created
 handle_worktree() {
     if [[ $USE_WORKTREE -eq 1 ]]; then
         require_git_repo "$PROJ" "Project directory"
-        create_agent_worktree "$PROJ" "$BRANCH"
+        create_agent_worktree "$PROJ" "$BRANCH" "$FROM_REF"
         PROJ="$AGENTBOX_WORKTREE_PATH"
         log_info "Using worktree: $PROJ"
         log_info "Branch: $AGENTBOX_WORKTREE_BRANCH"

@@ -39,6 +39,7 @@ OPTIONS:
   -p, --proj PATH       Project directory (default: current directory)
   -w, --worktree        Create a git worktree for parallel development
       --branch NAME     Branch name for worktree (default: agent/<id>)
+  -f, --from REF        Start worktree from REF (branch, tag, or commit)
   -k, --keep            Keep container running after shell exit
   -t, --tools PATH      Additional tooling repo to mount (repeatable)
   -v, --volume SPEC     Additional volume mount (repeatable)
@@ -47,7 +48,7 @@ OPTIONS:
                         Formats: 8888, 8888:8888, 127.0.0.1:8888:8888
   -m, --mode MODE       Agent mode: patch, yolo, lockdown (default: patch)
       --image IMAGE     Container image (overrides config default)
-      --gpus SPEC       GPU specification (e.g., "all", "2")
+      --gpus SPEC       GPU specification (default: all, use "none" to disable)
       --cmd COMMAND     Command to run in container (default: interactive shell)
   -h, --help            Show this help message
       --debug           Enable debug logging
@@ -64,10 +65,11 @@ DOCKER_ARGS:
 EXAMPLES:
   box                                    # Current directory, patch mode
   box --yolo -p ~/projects/myapp         # Yolo mode
-  box -p ~/projects/myapp --gpus all     # With GPUs
+  box -p ~/projects/myapp --gpus none    # Disable GPUs
   box -- --memory 32g --shm-size 16g     # Extra docker args
   box -w -p ~/projects/myapp             # Create worktree
   box -w --branch feature/auth -p ~/proj # Worktree with branch
+  box -w -f main -p ~/projects/myapp     # Worktree starting from main
   box -v /data/datasets                  # Mount datasets directory
   box -v /data:/data:ro -v /models       # Multiple volume mounts
   box -k -p ~/projects/myapp             # Keep container running after exit
@@ -147,11 +149,15 @@ main() {
     # Build docker args
     declare -a docker_args=()
 
-    # GPUs
-    if [[ -n "$GPUS" ]]; then
+    # GPUs - enabled by default
+    if [[ "$GPUS" == "none" ]]; then
+        : # Explicitly disabled
+    elif [[ -n "$GPUS" ]]; then
         docker_args+=(--gpus "$GPUS")
     elif [[ -n "${AGENTBOX_DOCKER_GPUS:-}" ]]; then
         docker_args+=(--gpus "${AGENTBOX_DOCKER_GPUS}")
+    else
+        docker_args+=(--gpus all)
     fi
 
     # Ports
