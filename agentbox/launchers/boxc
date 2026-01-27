@@ -59,9 +59,9 @@ done
 # Build claude command
 #######################################
 if [[ $skip_perms -eq 1 ]]; then
-    CLAUDE_CMD="claude --dangerously-skip-permissions"
+    CLAUDE_CMD="claude --model opus --dangerously-skip-permissions"
 else
-    CLAUDE_CMD="claude"
+    CLAUDE_CMD="claude --model opus"
 fi
 
 #######################################
