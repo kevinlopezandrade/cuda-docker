@@ -99,6 +99,17 @@ RUN echo '#!/bin/sh' > /usr/local/bin/afplay && chmod +x /usr/local/bin/afplay
 # Add ~/.local/bin to PATH for all login shells (Claude Code, uv, etc. install there)
 RUN echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/local-bin.sh
 
+# Setup global vim configuration for all users
+RUN mkdir -p /etc/vim && \
+    { \
+        echo '" Vim configuration'; \
+        echo 'set number'; \
+        echo ''; \
+        echo '" Custom keybindings'; \
+        echo 'nnoremap <silent> <Space> <Nop>'; \
+        echo 'inoremap <silent> jk <Esc>'; \
+    } > /etc/vim/vimrc.local
+
 # Environment for tools
 ENV UV_PYTHON_PREFERENCE=managed \
     EDITOR=vim
