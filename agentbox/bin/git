@@ -73,6 +73,13 @@ case "$SUBCMD" in
         exit 2
         ;;
 
+    # Init: ALWAYS forbidden (prevents creating new repositories)
+    init)
+        echo "AGENTBOX POLICY: 'git init' is forbidden in this container." >&2
+        echo "                 Agents cannot initialize new repositories." >&2
+        exit 2
+        ;;
+
     remote)
         # Allow 'git remote' for reading, but block modifications
         # Check if any write operation is attempted
